@@ -1,118 +1,118 @@
-# Brainstorm v2.2.0
+# Immolate Enhanced - Erratic Deck Support for Brainstorm
 
-Advanced seed rerolling and save state mod for Balatro, featuring high-performance native seed filtering and Erratic deck validation.
+## Overview
 
-## Features
+This repository contains enhancements to the original Immolate OpenCL seed searcher to add full Erratic deck support for the Brainstorm mod.
 
-### 🎲 Advanced Seed Rerolling
-- **Manual Reroll**: `Ctrl+R` - Instantly reroll to a new seed
-- **Auto-Reroll**: `Ctrl+A` - Automatically search for seeds matching your criteria
-- **Performance Options**: 250-5000 seeds per second
-- **Smart Filtering**: Find specific vouchers, tags, and booster packs
-- **Erratic Deck Support**: Validate face card counts and suit distributions
+## What's Included
 
-### 💾 Save State System
-- **5 Save Slots**: Store complete game states
-- **Quick Save**: Hold `Z` + `1-5` to save current run
-- **Quick Load**: Hold `X` + `1-5` to load saved state
-- **Visual Feedback**: On-screen alerts confirm save/load actions
-- **Persistent Storage**: States saved as compressed `.jkr` files
+### Core Components
 
-### 🃏 Erratic Deck Filters
-- **Face Card Requirements**: Set minimum face cards (0-23)
-- **Suit Distribution**: Require top 2 suits to comprise X% of deck
-- **Realistic Limits**: Based on analysis of 5,790+ seeds
-  - Max achievable face cards: ~23
-  - Max achievable suit ratio: ~75%
+1. **Original Immolate** (`ImmolateSourceCode/`)
+   - GPU-accelerated OpenCL seed searcher
+   - Handles vouchers, tags, and pack filtering
+   - 100,000+ seeds/second performance
 
-### 🔍 Filter Options
-- **Tags**: Charm, Double, Uncommon, Rare, Holographic, Foil, etc.
-- **Vouchers**: Overstock, Crystal Ball, Telescope, Grabber, etc.
-- **Booster Packs**: Arcana, Celestial, Standard, Buffoon, Spectral
-- **Instant Bonuses**: Observatory, Perkeo
-- **Soul Skip**: Number of soul cards to skip
+2. **Erratic Deck Enhancements** 
+   - `filters/erratic_brainstorm.cl` - New filter for Erratic deck requirements
+   - `lib/erratic_support.cl` - Helper functions for deck analysis
+   - Full support for face card counting and suit ratio filtering
 
-## Installation
+3. **Analysis Tools**
+   - `balatro_rng_analyzer.c` - Demonstrates RNG flaws (glitched seeds)
+   - `README_GLITCHED_SEEDS.md` - Documentation of RNG issues
 
-1. Install [Lovely](https://github.com/ethangreen-dev/lovely-injector) mod loader
-2. Download the latest release
-3. Extract to: `%AppData%/Balatro/Mods/Brainstorm/`
-4. Launch Balatro
+## Quick Start
 
-## Usage
+### Using Enhanced Immolate
 
-### Basic Controls
-- `Ctrl+R`: Manual reroll
-- `Ctrl+A`: Toggle auto-reroll
-- `Z + 1-5`: Save state to slot
-- `X + 1-5`: Load state from slot
+1. **Build the enhanced version**:
+   ```cmd
+   build_immolate_enhanced.bat
+   ```
 
-### Configuration
-Access the Brainstorm tab in game settings to configure:
-- Filter criteria (tags, vouchers, packs)
-- Erratic deck requirements
-- Performance settings
-- Debug mode
+2. **Search for Erratic seeds with specific requirements**:
+   ```cmd
+   cd ImmolateSourceCode
+   
+   # Find seeds with 20+ face cards and 50%+ of one suit
+   Immolate.exe -f erratic_brainstorm -n 100000 -c 2000
+   
+   # Test the infamous glitched seed
+   Immolate.exe -f erratic_brainstorm -s 7LB2WVPK -n 1
+   ```
 
-### Performance Tips
-- **For Erratic Decks**: Limited to ~1000 seeds/sec to prevent lag
-- **Without Erratic**: Can achieve full speed (up to 5000/sec)
-- **Realistic Targets**: 
-  - 15-18 face cards + 60% suit ratio = Rare but findable
-  - 20+ face cards OR 70%+ suit ratio = Very rare
-  - Both together = Extremely rare
+3. **Use with Brainstorm**:
+   - Keep original `Immolate.dll` for voucher/tag filtering
+   - Use enhanced Immolate for Erratic deck pre-filtering
+   - Brainstorm validates final results in-game
 
-## Technical Details
+## Filter Parameters
 
-### Architecture
-- **Core/Brainstorm.lua**: Main mod logic, hooks, and state management
-- **UI/ui.lua**: Settings interface and configuration
-- **Immolate.dll**: Native C++ component for high-performance seed filtering
-- **config.lua**: Persistent settings storage
+Edit `filters/erratic_brainstorm.cl` to adjust:
 
-### Limitations
-- **Windows Only**: Due to native DLL dependency
-- **Erratic Deck Performance**: Each seed test requires game restart
-- **Suit Ratio Maximum**: 75% is the realistic maximum (80% appears impossible)
+```c
+const int MIN_FACE_CARDS = 20;      // Minimum face cards
+const int MAX_FACE_CARDS = 52;      // Maximum (52 = no limit)
+const float MIN_SUIT_RATIO = 0.5;   // Minimum suit ratio (50%)
+const int TARGET_SUIT = -1;         // -1=any, 0=C, 1=D, 2=H, 3=S
+```
 
-### Debug Mode
-Enable `debug_enabled = true` in config for:
-- Seeds per second tracking
-- Distribution analysis
-- Rejection reason statistics
-- Performance metrics
+## Performance
+
+| Method | Seeds/Second | Use Case |
+|--------|--------------|----------|
+| Game Restarts | ~110 | Final validation |
+| CPU Implementation | ~10,000 | Learning/testing |
+| **GPU Immolate** | **100,000+** | **Production searching** |
+
+## How It Works
+
+The enhancement replicates Balatro's Erratic deck generation:
+
+1. Each card position randomly selects from all 52 cards
+2. Uses the same RNG constants: `1.72431234` and `2.134453429141`
+3. Maintains state through the node caching system
+4. Accurately reproduces glitched seeds
 
 ## Known Issues
 
-- Searching for 80%+ suit ratio will run indefinitely (mathematically impossible)
-- Combining strict Erratic requirements with voucher/tag filters may take very long
-- Frame drops when testing many seeds per frame
+### The RNG Flaw
 
-## Development
+Balatro's RNG has a self-feeding issue identified by the community:
+- Lacks entropy (no external randomness)
+- Can produce statistically impossible seeds
+- Example: Seed `7LB2WVPK` generates 52 copies of 10 of Spades
 
-### Requirements
-- Lua 5.1+ (included with Balatro)
-- Lovely mod loader
-- Windows OS (for DLL)
+Our implementation **accurately replicates this flaw** for compatibility.
 
-### Code Style
-- Snake_case naming throughout
-- Cached function references for performance
-- Comprehensive error handling with pcall
-- Deep merge for config loading
+## Testing
 
-### Future Improvements
-- Custom Rust/Zig DLL for 100,000+ seeds/sec
-- GPU acceleration for parallel seed testing
-- Pre-computed seed database
-- Cross-platform support
+Run the test suite:
+```cmd
+test_immolate_erratic.bat
+```
+
+This will:
+1. Test known glitched seeds
+2. Search for high face card counts
+3. Verify suit ratio filtering
+
+## Integration with Brainstorm
+
+The enhanced Immolate works alongside Brainstorm:
+
+1. **Pre-filtering**: Immolate quickly eliminates bad seeds
+2. **Final validation**: Brainstorm verifies in-game
+3. **Best of both**: GPU speed + game accuracy
 
 ## Credits
 
-- **Author**: OceanRamen
-- **Contributors**: Enhanced debugging and Erratic deck support by community
-- **Framework**: Uses Lovely mod loader and Steamodded compatibility
+- **Original Immolate**: SpectralPack team
+- **RNG Analysis**: jimbo_extreme1 (Reddit)
+- **Brainstorm Mod**: Original authors
+- **Enhancements**: This implementation
 
 ## License
 
-This mod is provided as-is for the Balatro community. Feel free to modify and share.
+Enhancements are provided as-is for the Balatro modding community.
