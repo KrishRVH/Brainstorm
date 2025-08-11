@@ -59,7 +59,7 @@ typedef struct {
 } FilterConfig;
 
 typedef struct {
-    uint64_t seed;
+    char seed[9];  // 8 character seed + null terminator
     Deck deck;
     bool matches_filters;
     char vouchers[10][32];
@@ -70,15 +70,13 @@ typedef struct {
 
 static uint32_t rng_state;
 
-static double pseudohash(const char* str, uint64_t seed) {
+static double pseudohash(const char* str) {
     double num = 1.0;
     int len = strlen(str);
-    char combined[256];
-    snprintf(combined, sizeof(combined), "%s%llu", str, seed);
-    len = strlen(combined);
     
+    // Balatro's exact algorithm: iterate backwards through string
     for (int i = len - 1; i >= 0; i--) {
-        num = fmod((1.1239285023 / num) * combined[i] * M_PI + M_PI * i, 1.0);
+        num = fmod((1.1239285023 / num) * str[i] * M_PI + M_PI * (i + 1), 1.0);
     }
     return num;
 }
@@ -114,14 +112,37 @@ static Card get_card_from_index(int index) {
     return card;
 }
 
-static void generate_erratic_deck(Deck* deck, uint64_t seed) {
+// Balatro's pseudoseed implementation for erratic deck
+static double pseudoseed_erratic(const char* key, const char* seed_str, int iteration) {
+    // Create combined string like "erratic" + seed
+    char combined[256];
+    snprintf(combined, sizeof(combined), "%s%s", key, seed_str);
+    
+    // Get initial hash
+    double hash = pseudohash(combined);
+    
+    // Apply Balatro's transformation for multiple iterations
+    // This simulates the state-based pseudorandom generation
+    for (int i = 0; i < iteration; i++) {
+        hash = fabs(fmod(2.134453429141 + hash * 1.72431234, 1.0));
+    }
+    
+    return hash;
+}
+
+static void generate_erratic_deck(Deck* deck, const char* seed_str) {
     memset(deck, 0, sizeof(Deck));
     
-    double erratic_hash = pseudohash("erratic", seed);
-    seed_rng((uint64_t)(erratic_hash * UINT64_MAX));
-    
+    // For Erratic deck, each card position gets a random card from all 52
+    // This matches: pseudorandom_element(G.P_CARDS, pseudoseed('erratic'))
     for (int i = 0; i < DECK_SIZE; i++) {
-        int random_index = pseudorandom_int(0, 51);
+        // Each card gets its own pseudoseed call iteration
+        double seed_val = pseudoseed_erratic("erratic", seed_str, i + 1);
+        
+        // Convert to integer index (0-51)
+        seed_rng((uint64_t)(seed_val * UINT64_MAX));
+        int random_index = xorshift32() % 52;
+        
         deck->cards[i] = get_card_from_index(random_index);
         
         if (deck->cards[i].rank >= RANK_J) {
