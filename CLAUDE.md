@@ -1,144 +1,189 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with the Brainstorm mod codebase.
 
 ## Project Overview
 
 Brainstorm is a Lua-based mod for Balatro that provides advanced seed rerolling, filtering capabilities, and save state management. It uses the Lovely mod loader and includes a native C/C++ DLL component for performance-critical operations.
 
-## Commands
+## Current State (v2.2.0)
 
-### Code Formatting
-```bash
-# Check formatting
-stylua --check .
+### Completed Work
+- ✅ Full snake_case naming convention throughout
+- ✅ Comprehensive debug system with statistics tracking
+- ✅ Save state system (5 slots) fully functional
+- ✅ Erratic deck validation with realistic limits
+- ✅ Performance optimization for different seed rates
+- ✅ Deep merge config loading for backward compatibility
+- ✅ Error handling improved (no more crashes, graceful degradation)
+- ✅ UI limits set to realistic values (75% suit ratio, 23 face cards max)
 
-# Auto-format code
-stylua .
-```
+### Key Findings from Testing
+Based on analysis of 5,790+ seeds:
+- **Maximum achievable suit ratio**: ~75% (76.9% was highest found)
+- **80% suit ratio**: Appears to be mathematically impossible
+- **Maximum face cards found**: 23 (25 is theoretically possible but extremely rare)
+- **Performance**: ~110 seeds/second with Erratic deck requirements
 
-### Git Workflow
-- Pre-commit hooks automatically format code using StyLua
-- Feature branches merge into `master` via pull requests
-
-## High-Level Architecture
+## Architecture
 
 ### Core Components
 
-1. **Core/Brainstorm.lua** - Main mod logic that:
-   - Hooks into Balatro's `Game:update()` loop
-   - Manages reroll state machine
-   - Handles keybinds (Ctrl+R for manual, Ctrl+A for auto, z/x for save states)
-   - Persists configuration to `config.lua`
-   - Validates Erratic deck requirements (face cards, suit distribution)
-   - Manages save states (5 slots)
+1. **Core/Brainstorm.lua** (Main Module)
+   - Hooks into `Game:update()` and `Controller:key_press_update`
+   - Manages auto-reroll state machine
+   - Implements save/load state functionality
+   - Validates Erratic deck requirements
+   - Debug statistics and reporting
 
-2. **UI/ui.lua** - Configuration UI that:
-   - Defines the Brainstorm tab in game settings
-   - Creates checkboxes and sliders for all filter options
-   - Updates the global config table
-   - Provides Erratic Deck settings (face cards, suit ratio)
+2. **UI/ui.lua** (Settings Interface)
+   - Creates Brainstorm tab in game settings
+   - Manages all filter options and preferences
+   - Callbacks update global config
 
-3. **Immolate.dll** - Native component accessed via FFI:
-   - High-performance seed generation
-   - Called through `ffi.cdef` declarations in Core/Brainstorm.lua
-   - Tests multiple seeds internally per call
-   - Windows-only (x86-64 PE32+ DLL)
+3. **Immolate.dll** (Native Component)
+   - High-performance seed filtering
+   - Tests vouchers, tags, and packs
+   - Does NOT understand Erratic deck generation
+   - Windows-only, MSVC-compiled
 
-4. **nativefs.lua** - Filesystem operations module:
-   - Provides file I/O capabilities
-   - Required for config persistence
-   - Patched in before main.lua by Lovely
+4. **config.lua** (Persistent Settings)
+   - Auto-saved using STR_PACK/STR_UNPACK
+   - Deep merged on load for compatibility
 
-### Mod Loading Flow
+### Key Systems
 
-1. Lovely loader reads `lovely.toml`
-2. Patches `nativefs.lua` module
-3. Appends `Core/Brainstorm.lua` to main.lua
-4. Injects initialization into `game.lua`
-5. Steamodded compatibility headers load if needed
+#### Auto-Reroll Logic
+```lua
+-- For Erratic decks with requirements:
+-- 1. Generate/get seed
+-- 2. Restart game with seed
+-- 3. Analyze deck
+-- 4. Check requirements
+-- 5. Continue or stop
 
-### Key Features
+-- Performance limited to prevent lag:
+-- - 250-1000 seeds/sec: Full speed
+-- - 1000-5000 seeds/sec: Capped at 10 seeds/frame
+```
+
+#### Debug System
+- Tracks seeds tested, rejection reasons, distributions
+- Periodic updates every 5 seconds
+- Final report with recommendations
+- Enabled via `debug_enabled` in config
 
 #### Save State System
-- **5 Save Slots**: Store complete game states
-- **Save Keybind**: Hold `z` + 1-5 to save current run
-- **Load Keybind**: Hold `x` + 1-5 to load saved state
-- **Visual Feedback**: Alert messages confirm save/load actions
-- **File Format**: Compressed `.jkr` files in profile directory
+- Uses `compress_and_save` and `get_compressed` 
+- Stores in profile directory as `save_state_[1-5].jkr`
+- Full game state including deck, money, jokers, etc.
 
-#### Auto-Reroll System
-- **Performance Settings**: 250-5000 seeds per second
-- **Multi-seed Testing**: Tests multiple seeds per frame based on performance setting
-- **Attention Text**: Shows "Rerolling..." after 60 frames
+## Commands
 
-#### Erratic Deck Validation
-- **Face Card Count**: Minimum number of face cards required (0-25)
-- **Suit Ratio**: Top 2 suits must comprise X% of deck (or disabled)
-- **Deck Analysis**: Counts all cards, suits, faces, aces
+### Development
+```bash
+# Format code
+stylua .
 
-#### Filter System
-- **Tags**: Various tags like Charm, Double, Uncommon, etc.
-- **Vouchers**: Overstock, Crystal Ball, Telescope, etc.
-- **Packs**: Arcana, Celestial, Standard, Buffoon, Spectral
-- **Soul Skip**: Number of soul cards to skip
-- **Instant Bonuses**: Observatory, Perkeo
+# Check formatting
+stylua --check .
+```
 
-### Important Patterns
+### Testing
+Test with different configurations:
+1. Erratic deck + face cards only
+2. Erratic deck + suit ratio only  
+3. Normal deck + voucher/tag filters
+4. Combinations (expect long search times)
 
-- **Function Naming**: Uses snake_case throughout
-- **Config Persistence**: Auto-saves to `config.lua` using STR_PACK/STR_UNPACK
-- **FFI Integration**: Wrapped in pcall for error handling
-- **Cached References**: Performance optimization through cached function refs
-- **Deep Merge**: Config loading uses deep merge to preserve existing settings
-- **Event System**: Uses G.E_MANAGER for delayed actions and alerts
+## Known Limitations
 
-### Known Limitations
+1. **Performance Bottleneck**: Each seed test requires full game restart
+2. **DLL Limitations**: Doesn't understand Erratic deck generation
+3. **Platform**: Windows-only due to native DLL
+4. **Impossible Combinations**: 80%+ suit ratio doesn't exist
 
-1. **DLL Dependency**: Windows-only due to Immolate.dll
-2. **Filter Combinations**: Using both DLL filters AND Erratic deck requirements can make finding seeds nearly impossible
-3. **Performance Bottleneck**: Game instance creation for each seed test is expensive
+## Next Steps
 
-## Development Notes
+### Short Term
+1. Monitor user feedback on realistic limits
+2. Consider adding "quick presets" for common searches
+3. Add export/import for save states
 
-- This is a runtime mod - no build step required
-- Test changes by running Balatro with the mod installed
-- Place mod in `%AppData%/Balatro/Mods/Brainstorm/`
-- Config changes persist automatically
-- Visual feedback appears as "attention text" in-game
-- Save states are stored as `save_state_[1-5].jkr` in profile folder
+### Long Term (Custom DLL)
+Create a new native library (Rust/Zig) that:
 
-## Current Configuration Defaults
+1. **Simulates full deck generation** including Erratic
+2. **Tests 100,000+ seeds/second** without game restarts
+3. **Batch processing** for efficiency
+4. **Cross-platform** support
 
-```lua
-{
-  keybinds = {
-    modifier = "lctrl",
-    f_reroll = "r",      -- Manual reroll
-    a_reroll = "a",      -- Toggle auto-reroll
-    save_state = "z",    -- Save state (with 1-5)
-    load_state = "x",    -- Load state (with 1-5)
-  },
-  ar_prefs = {
-    spf_int = 1000,      -- Seeds per second
-    face_count = 0,      -- Min face cards for Erratic
-    suit_ratio_percent = "Disabled",  -- Suit distribution requirement
-    suit_ratio_decimal = 0,
-  },
-  ar_filters = {
-    tag_name = "",       -- Empty = no tag filter
-    voucher_name = "",   -- Empty = no voucher filter
-    pack = {},           -- Empty = no pack filter
-    soul_skip = 0,
-    inst_observatory = false,
-    inst_perkeo = false,
-  }
+Implementation approach:
+```rust
+// Pseudo-code for new DLL
+fn test_seeds(start: u64, count: u32, filters: Filters) -> Vec<SeedResult> {
+    (0..count).parallel_map(|i| {
+        let seed = start + i;
+        let deck = generate_deck(seed, filters.deck_type);
+        let shop = generate_shop(seed);
+        
+        SeedResult {
+            seed,
+            matches: validate_all(deck, shop, filters),
+            face_cards: deck.face_count(),
+            suit_ratio: deck.suit_ratio(),
+        }
+    }).filter(|r| r.matches).collect()
 }
 ```
 
-## Keybind Reference
+### Research Needed
+1. Reverse engineer Balatro's exact PRNG algorithm
+2. Map Erratic deck generation logic
+3. Understand shop/voucher generation
 
-- **Ctrl+R**: Manual reroll (fast reroll)
-- **Ctrl+A**: Toggle auto-reroll
-- **z+1 to z+5**: Save game state to slot 1-5
-- **x+1 to x+5**: Load game state from slot 1-5
+## Code Style Guide
+
+- **Naming**: snake_case for all functions and variables
+- **Error Handling**: Use pcall for FFI and critical operations
+- **Performance**: Cache function references, minimize allocations
+- **Config**: Always use deep merge when loading
+- **Debug**: Use Brainstorm.debug structure for statistics
+- **Comments**: Minimal, code should be self-documenting
+
+## File Structure
+```
+Brainstorm/
+├── Core/
+│   └── Brainstorm.lua      # Main logic
+├── UI/
+│   └── ui.lua              # Settings interface
+├── config.lua              # User settings
+├── Immolate.dll           # Native component
+├── lovely.toml            # Mod loader config
+├── nativefs.lua           # File I/O module
+├── steamodded_compat.lua  # Compatibility header
+├── stylua.toml            # Code formatter config
+├── README.md              # User documentation
+├── CLAUDE.md              # This file
+└── IMMOLATE_SPEC.md       # DLL replacement spec
+```
+
+## Testing Checklist
+- [ ] Manual reroll (Ctrl+R)
+- [ ] Auto-reroll toggle (Ctrl+A)
+- [ ] Save states (Z+1-5)
+- [ ] Load states (X+1-5)
+- [ ] Face card filtering
+- [ ] Suit ratio filtering
+- [ ] Voucher/tag/pack filtering
+- [ ] Debug reporting
+- [ ] Config persistence
+
+## Support
+
+For issues or improvements, consider:
+1. Debug logs with `debug_enabled = true`
+2. Realistic filter combinations
+3. Performance vs. accuracy tradeoffs
+4. User experience over technical perfection

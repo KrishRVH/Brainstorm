@@ -39,6 +39,7 @@ Brainstorm.config = {
     suit_ratio_percent = "Disabled",
     suit_ratio_decimal = 0,
   },
+  debug_enabled = true,
 }
 
 -- Auto-reroll state
@@ -46,6 +47,26 @@ Brainstorm.ar_timer = 0
 Brainstorm.ar_frames = 0
 Brainstorm.ar_text = nil
 Brainstorm.ar_active = false
+
+-- Debug statistics
+Brainstorm.debug = {
+  enabled = false, -- Will be set from config
+  seeds_tested = 0,
+  seeds_found = 0,
+  start_time = 0,
+  rejection_reasons = {
+    face_cards = 0,
+    suit_ratio = 0,
+    dll_filter = 0,
+  },
+  distributions = {
+    face_cards = {},
+    suit_ratios = {},
+  },
+  last_report_time = 0,
+  highest_suit_ratio = 0,
+  highest_face_count = 0,
+}
 
 -- Constants
 Brainstorm.AR_INTERVAL = 0.01 -- Seconds between reroll attempts
@@ -144,6 +165,7 @@ end
 function Brainstorm.init()
   Brainstorm.PATH = find_brainstorm_directory(lovely.mod_dir)
   Brainstorm.load_config()
+  Brainstorm.debug.enabled = Brainstorm.config.debug_enabled or false
   assert(load(nfs.read(Brainstorm.PATH .. "/UI/ui.lua")))()
 end
 
@@ -234,7 +256,11 @@ function Controller:key_press_update(key, dt)
     if key == keybinds.f_reroll then
       Brainstorm.reroll()
     elseif key == keybinds.a_reroll then
-      Brainstorm.ar_active = not Brainstorm.ar_active
+      if Brainstorm.ar_active then
+        Brainstorm.stop_auto_reroll(false)
+      else
+        Brainstorm.ar_active = true
+      end
     end
   end
 end
@@ -301,9 +327,33 @@ function Brainstorm.is_valid_deck(
   local ace_count = deck_data.ace_count or 0
   local suit_count = deck_data.suit_count or {}
 
+  -- Track distribution for debugging
+  if Brainstorm.debug.enabled then
+    local fc_bucket = math.floor(face_card_count / 5) * 5
+    Brainstorm.debug.distributions.face_cards[fc_bucket] = (
+      Brainstorm.debug.distributions.face_cards[fc_bucket] or 0
+    ) + 1
+
+    -- Track highest face count
+    if face_card_count > Brainstorm.debug.highest_face_count then
+      Brainstorm.debug.highest_face_count = face_card_count
+      if face_card_count >= 20 then
+        print(
+          string.format(
+            "[Brainstorm] HIGH FACE COUNT: %d face cards found!",
+            face_card_count
+          )
+        )
+      end
+    end
+  end
+
   -- Check Face Cards & Aces
   if face_card_count < min_face_cards then
-    --print("Deck has", face_card_count, "face cards, need", min_face_cards)
+    if Brainstorm.debug.enabled then
+      Brainstorm.debug.rejection_reasons.face_cards = Brainstorm.debug.rejection_reasons.face_cards
+        + 1
+    end
     return false
   end
   if ace_count < min_aces then
@@ -328,14 +378,176 @@ function Brainstorm.is_valid_deck(
         + (sorted_suits[2] and sorted_suits[2].count or 0)
       local top_2_suit_percentage = top_2_suit_count / total_cards
 
+      -- Track suit ratio distribution
+      if Brainstorm.debug.enabled then
+        local ratio_bucket = math.floor(top_2_suit_percentage * 10) * 10
+        Brainstorm.debug.distributions.suit_ratios[ratio_bucket] = (
+          Brainstorm.debug.distributions.suit_ratios[ratio_bucket] or 0
+        ) + 1
+
+        -- Track the highest ratio we've seen
+        if
+          not Brainstorm.debug.highest_suit_ratio
+          or top_2_suit_percentage > Brainstorm.debug.highest_suit_ratio
+        then
+          Brainstorm.debug.highest_suit_ratio = top_2_suit_percentage
+          if top_2_suit_percentage >= 0.75 then
+            -- Log exceptional finds
+            print(
+              string.format(
+                "[Brainstorm] HIGH RATIO FOUND: %.1f%% (Spades:%d Hearts:%d Clubs:%d Diamonds:%d)",
+                top_2_suit_percentage * 100,
+                suit_count.Spades or 0,
+                suit_count.Hearts or 0,
+                suit_count.Clubs or 0,
+                suit_count.Diamonds or 0
+              )
+            )
+          end
+        end
+      end
+
       if top_2_suit_percentage < dominant_suit_ratio then
-        --print("Suit ratio is", string.format("%.1f%%", top_2_suit_percentage * 100), "need", string.format("%.1f%%", dominant_suit_ratio * 100))
+        if Brainstorm.debug.enabled then
+          Brainstorm.debug.rejection_reasons.suit_ratio = Brainstorm.debug.rejection_reasons.suit_ratio
+            + 1
+        end
         return false
       end
     end
   end
 
   return true
+end
+
+function Brainstorm.print_debug_report(success)
+  local elapsed = os.clock() - Brainstorm.debug.start_time
+  local seeds_per_sec = Brainstorm.debug.seeds_tested / elapsed
+
+  print("========================================")
+  print("[Brainstorm Debug Report]")
+  print(
+    string.format(
+      "Result: %s",
+      success and "SUCCESS - Seed Found!" or "STOPPED"
+    )
+  )
+  print(string.format("Time elapsed: %.2f seconds", elapsed))
+  print(string.format("Seeds tested: %d", Brainstorm.debug.seeds_tested))
+  print(string.format("Seeds per second: %.1f", seeds_per_sec))
+  print(
+    string.format("Seeds found matching DLL: %d", Brainstorm.debug.seeds_found)
+  )
+
+  print("\nRejection Reasons:")
+  local total_rejections = Brainstorm.debug.rejection_reasons.face_cards
+    + Brainstorm.debug.rejection_reasons.suit_ratio
+  if total_rejections > 0 then
+    print(
+      string.format(
+        "  Face cards: %d (%.1f%%)",
+        Brainstorm.debug.rejection_reasons.face_cards,
+        Brainstorm.debug.rejection_reasons.face_cards / total_rejections * 100
+      )
+    )
+    print(
+      string.format(
+        "  Suit ratio: %d (%.1f%%)",
+        Brainstorm.debug.rejection_reasons.suit_ratio,
+        Brainstorm.debug.rejection_reasons.suit_ratio / total_rejections * 100
+      )
+    )
+  end
+
+  print("\nFace Card Distribution:")
+  for bucket = 0, 30, 5 do
+    local count = Brainstorm.debug.distributions.face_cards[bucket] or 0
+    if count > 0 then
+      print(
+        string.format(
+          "  %d-%d: %d seeds (%.1f%%)",
+          bucket,
+          bucket + 4,
+          count,
+          count / Brainstorm.debug.seeds_tested * 100
+        )
+      )
+    end
+  end
+
+  print("\nSuit Ratio Distribution:")
+  local max_ratio = 0
+  for bucket = 40, 90, 10 do
+    local count = Brainstorm.debug.distributions.suit_ratios[bucket] or 0
+    if count > 0 then
+      print(
+        string.format(
+          "  %d%%-%d%%: %d seeds (%.1f%%)",
+          bucket,
+          bucket + 9,
+          count,
+          count / Brainstorm.debug.seeds_tested * 100
+        )
+      )
+      if bucket > max_ratio then
+        max_ratio = bucket
+      end
+    end
+  end
+
+  -- Show exact max values found
+  print(
+    string.format(
+      "\nHighest suit ratio found: %.1f%% (in %d%%-%d%% bucket)",
+      (Brainstorm.debug.highest_suit_ratio or 0) * 100,
+      max_ratio,
+      max_ratio + 9
+    )
+  )
+  print(
+    string.format(
+      "Highest face count found: %d face cards",
+      Brainstorm.debug.highest_face_count or 0
+    )
+  )
+  print(
+    string.format(
+      "\nTarget suit ratio: %.0f%%",
+      (Brainstorm.config.ar_prefs.suit_ratio_decimal or 0) * 100
+    )
+  )
+  print(
+    string.format(
+      "Target face count: %d",
+      Brainstorm.config.ar_prefs.face_count or 0
+    )
+  )
+
+  -- Recommendation
+  if Brainstorm.config.ar_prefs.suit_ratio_decimal >= 0.75 then
+    print("\nWARNING: 75% suit ratio is the maximum achievable!")
+    print("Consider using 70% or lower for faster results.")
+  elseif Brainstorm.config.ar_prefs.suit_ratio_decimal > 0.7 then
+    print("\nNOTE: Suit ratios above 70% are extremely rare.")
+    print("Expect longer search times.")
+  end
+
+  print("========================================")
+end
+
+function Brainstorm.print_periodic_update()
+  local elapsed = os.clock() - Brainstorm.debug.start_time
+  local seeds_per_sec = Brainstorm.debug.seeds_tested / elapsed
+
+  print(
+    string.format(
+      "[Brainstorm] Progress: %d seeds tested | %.1f seeds/sec | %d face rejections | %d ratio rejections",
+      Brainstorm.debug.seeds_tested,
+      seeds_per_sec,
+      Brainstorm.debug.rejection_reasons.face_cards,
+      Brainstorm.debug.rejection_reasons.suit_ratio
+    )
+  )
 end
 
 function Brainstorm.reroll()
@@ -361,6 +573,21 @@ function Game:update(dt)
   update_ref(self, dt)
 
   if Brainstorm.ar_active then
+    -- Initialize debug tracking on first frame
+    if Brainstorm.debug.start_time == 0 then
+      Brainstorm.debug.start_time = os.clock()
+      Brainstorm.debug.last_report_time = os.clock()
+    end
+
+    -- Print periodic updates every 5 seconds
+    if
+      Brainstorm.debug.enabled
+      and os.clock() - Brainstorm.debug.last_report_time > 5
+    then
+      Brainstorm.print_periodic_update()
+      Brainstorm.debug.last_report_time = os.clock()
+    end
+
     Brainstorm.ar_frames = Brainstorm.ar_frames + 1
     Brainstorm.ar_timer = Brainstorm.ar_timer + dt
 
@@ -374,11 +601,79 @@ function Game:update(dt)
         math.max(1, math.floor(Brainstorm.config.ar_prefs.spf_int / 100))
       local seed_found = nil
 
-      for i = 1, seeds_to_try do
-        seed_found = Brainstorm.auto_reroll()
-        if seed_found then
-          if G.GAME.starting_params.erratic_suits_and_ranks then
+      -- Check if we have Erratic deck requirements
+      local has_erratic_requirements = G.GAME.starting_params.erratic_suits_and_ranks
+        and (
+          Brainstorm.config.ar_prefs.face_count > 0
+          or Brainstorm.config.ar_prefs.suit_ratio_decimal > 0
+        )
+
+      -- Check if we have other filters active (vouchers, tags, packs)
+      local has_other_filters = (
+        Brainstorm.config.ar_filters.voucher_name ~= ""
+      )
+        or (Brainstorm.config.ar_filters.tag_name ~= "")
+        or (#Brainstorm.config.ar_filters.pack > 0)
+
+      if has_erratic_requirements then
+        -- For Erratic, dynamically adjust based on performance
+        local max_seeds = 5 -- Conservative default
+        if Brainstorm.config.ar_prefs.spf_int <= 500 then
+          max_seeds = seeds_to_try -- Use full speed for low settings
+        elseif Brainstorm.config.ar_prefs.spf_int <= 1000 then
+          max_seeds = math.min(seeds_to_try, 5) -- Cap at 5 for medium
+        else
+          max_seeds = math.min(seeds_to_try, 10) -- Cap at 10 for high
+        end
+        local erratic_seeds_to_try = max_seeds
+
+        -- Log actual speed for debugging
+        if Brainstorm.debug.enabled and Brainstorm.debug.seeds_tested == 1 then
+          print(
+            string.format(
+              "[Brainstorm] Testing %d seeds per frame (target: %d/sec)",
+              erratic_seeds_to_try,
+              Brainstorm.config.ar_prefs.spf_int
+            )
+          )
+        end
+
+        for i = 1, erratic_seeds_to_try do
+          local test_seed = nil
+
+          if has_other_filters then
+            -- Use DLL to find seeds with voucher/tag/pack requirements
+            test_seed = Brainstorm.auto_reroll()
+            if test_seed then
+              Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
+            end
+          else
+            -- No other filters, just generate random seeds
+            test_seed = random_string(
+              8,
+              G.CONTROLLER.cursor_hover.T.x * SEED_X_FACTOR
+                + G.CONTROLLER.cursor_hover.T.y * SEED_Y_FACTOR
+                + SEED_TIME_FACTOR
+                  * (G.CONTROLLER.cursor_hover.time + i * 0.001)
+            )
+          end
+
+          if test_seed then
+            local stake = G.GAME.stake
+            local challenge = G.GAME
+              and G.GAME.challenge
+              and G.GAME.challenge_tab
+            G:delete_run()
+            G:start_run({
+              stake = stake,
+              seed = test_seed,
+              challenge = challenge,
+            })
+
+            -- Check if this seed meets the Erratic deck requirements
             local deck_data = Brainstorm.analyze_deck()
+            Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
+
             if
               Brainstorm.is_valid_deck(
                 deck_data,
@@ -387,13 +682,35 @@ function Game:update(dt)
                 Brainstorm.config.ar_prefs.suit_ratio_decimal
               )
             then
-              Brainstorm.stop_auto_reroll()
+              -- Found a valid seed that meets all criteria
+              Brainstorm.stop_auto_reroll(true)
+              G.GAME.used_filter = true
+              G.GAME.seeded = false
               break
             end
-            -- Note: For Erratic decks, this may run indefinitely if no seed
-            -- matches both the filter criteria AND deck requirements
-          else
-            Brainstorm.stop_auto_reroll()
+          end
+        end
+      else
+        -- No Erratic requirements, use DLL normally
+        for i = 1, seeds_to_try do
+          seed_found = Brainstorm.auto_reroll()
+          if seed_found then
+            -- Found a seed that matches DLL criteria
+            local stake = G.GAME.stake
+            local challenge = G.GAME
+              and G.GAME.challenge
+              and G.GAME.challenge_tab
+            G:delete_run()
+            G:start_run({
+              stake = stake,
+              seed = seed_found,
+              challenge = challenge,
+            })
+            G.GAME.used_filter = true
+            G.GAME.seeded = false
+            Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
+            Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
+            Brainstorm.stop_auto_reroll(true)
             break
           end
         end
@@ -434,9 +751,10 @@ local function init_ffi()
     end
     ffi_loaded = true
   end
+  return true
 end
 
-function Brainstorm.stop_auto_reroll()
+function Brainstorm.stop_auto_reroll(success)
   Brainstorm.ar_active = false
   Brainstorm.ar_frames = 0
   if Brainstorm.ar_text then
@@ -445,6 +763,27 @@ function Brainstorm.stop_auto_reroll()
     end
     Brainstorm.ar_text = nil
   end
+
+  -- Print final debug report
+  if Brainstorm.debug.enabled and Brainstorm.debug.seeds_tested > 0 then
+    Brainstorm.print_debug_report(success)
+  end
+
+  -- Reset debug stats
+  Brainstorm.debug.seeds_tested = 0
+  Brainstorm.debug.seeds_found = 0
+  Brainstorm.debug.start_time = 0
+  Brainstorm.debug.highest_suit_ratio = 0
+  Brainstorm.debug.highest_face_count = 0
+  Brainstorm.debug.rejection_reasons = {
+    face_cards = 0,
+    suit_ratio = 0,
+    dll_filter = 0,
+  }
+  Brainstorm.debug.distributions = {
+    face_cards = {},
+    suit_ratios = {},
+  }
 end
 
 function Brainstorm.auto_reroll()
@@ -502,28 +841,8 @@ function Brainstorm.auto_reroll()
   end
 
   seed_found = result and ffi.string(result) or nil
-  if seed_found then
-    local stake = G.GAME.stake
-    G:delete_run()
-    G:start_run({
-      stake = stake,
-      seed = seed_found,
-      challenge = G.GAME and G.GAME.challenge and G.GAME.challenge_tab,
-    })
-    G.GAME.used_filter = true
-    G.GAME.filter_info = {
-      filter_params = {
-        seed_found,
-        voucher_name,
-        pack_name,
-        tag_name,
-        Brainstorm.config.ar_filters.soul_skip,
-        Brainstorm.config.ar_filters.inst_observatory,
-        Brainstorm.config.ar_filters.inst_perkeo,
-      },
-    }
-    G.GAME.seeded = false
-  end
+  -- Return the seed without restarting the game
+  -- The caller will decide whether to restart based on deck validation
   return seed_found
 end
 

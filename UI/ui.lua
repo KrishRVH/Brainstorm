@@ -90,12 +90,12 @@ local ratio_list = {
   ["Disabled"] = 0,
   ["50%"] = 0.5,
   ["60%"] = 0.6,
+  ["65%"] = 0.65,
   ["70%"] = 0.7,
   ["75%"] = 0.75,
-  ["80%"] = 0.80,
 }
 
-local ratio_keys = { "Disabled", "50%", "60%", "70%", "75%", "80%" }
+local ratio_keys = { "Disabled", "50%", "60%", "65%", "70%", "75%" }
 
 local voucher_keys = {
   "None",
@@ -300,7 +300,7 @@ function create_tabs(args)
                   w = 4,
                   options = (function()
                     local opts = {}
-                    for i = 0, 25 do
+                    for i = 0, 23 do
                       opts[i + 1] = i
                     end
                     return opts
