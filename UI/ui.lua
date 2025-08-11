@@ -87,6 +87,7 @@ local spf_list = {
 local spf_keys = { "250", "500", "750", "1000", "2000", "3000", "4000", "5000" }
 
 local ratio_list = {
+  ["Disabled"] = 0,
   ["50%"] = 0.5,
   ["60%"] = 0.6,
   ["70%"] = 0.7,
@@ -94,7 +95,7 @@ local ratio_list = {
   ["80%"] = 0.80,
 }
 
-local ratio_keys = { "50%", "60%", "70%", "75%", "80%" }
+local ratio_keys = { "Disabled", "50%", "60%", "70%", "75%", "80%" }
 
 local voucher_keys = {
   "None",
@@ -252,8 +253,9 @@ function create_tabs(args)
                   w = 4,
                   options = { 0, 1 },
                   opt_callback = "change_soul_count",
-                  current_option = Brainstorm.config.ar_filters.soul_skip + 1
-                    or 1,
+                  current_option = (
+                    Brainstorm.config.ar_filters.soul_skip or 0
+                  ) + 1,
                 }),
               },
             },
@@ -279,14 +281,18 @@ function create_tabs(args)
                   scale = 0.8,
                   ref_table = Brainstorm.config.ar_filters,
                   ref_value = "inst_observatory",
-                  callback = function(_set_toggle) end,
+                  callback = function(_set_toggle)
+                    Brainstorm.write_config()
+                  end,
                 }),
                 create_toggle({
                   label = "AR: INST PERKEO",
                   scale = 0.8,
                   ref_table = Brainstorm.config.ar_filters,
                   ref_value = "inst_perkeo",
-                  callback = function(_set_toggle) end,
+                  callback = function(_set_toggle)
+                    Brainstorm.write_config()
+                  end,
                 }),
                 create_option_cycle({
                   label = "ED: Min. # of Face Cards",

@@ -17,6 +17,8 @@ Brainstorm.config = {
     modifier = "lctrl",
     f_reroll = "r",
     a_reroll = "a",
+    save_state = "z",
+    load_state = "x",
   },
   ar_filters = {
     pack = {},
@@ -34,8 +36,8 @@ Brainstorm.config = {
     spf_int = 1000,
     face_count = 0,
     suit_ratio_id = 1,
-    suit_ratio_percent = "50%",
-    suit_ratio_decimal = 0.5,
+    suit_ratio_percent = "Disabled",
+    suit_ratio_decimal = 0,
   },
 }
 
@@ -81,7 +83,10 @@ function Brainstorm.load_config()
   else
     local config_file, err = nfs.read(config_path)
     if not config_file then
-      error("Failed to read config file: " .. (err or "unknown error"))
+      print(
+        "[Brainstorm] Failed to read config file: " .. (err or "unknown error")
+      )
+      return
     end
     -- STR_UNPACK is a Balatro function for deserializing Lua tables
     local success, loaded_config = pcall(STR_UNPACK, config_file)
@@ -105,9 +110,19 @@ function Brainstorm.load_config()
       Brainstorm.config.ar_prefs.suit_ratio_id = Brainstorm.config.ar_prefs.suit_ratio_id
         or 1
       Brainstorm.config.ar_prefs.suit_ratio_percent = Brainstorm.config.ar_prefs.suit_ratio_percent
-        or "50%"
-      Brainstorm.config.ar_prefs.suit_ratio_decimal = Brainstorm.config.ar_prefs.suit_ratio_decimal
-        or 0.5
+        or "Disabled"
+
+      -- Map suit ratio percentage to decimal value
+      local ratio_map = {
+        ["Disabled"] = 0,
+        ["50%"] = 0.5,
+        ["60%"] = 0.6,
+        ["70%"] = 0.7,
+        ["75%"] = 0.75,
+        ["80%"] = 0.80,
+      }
+      Brainstorm.config.ar_prefs.suit_ratio_decimal = ratio_map[Brainstorm.config.ar_prefs.suit_ratio_percent]
+        or 0
     end
   end
 end
@@ -119,7 +134,9 @@ function Brainstorm.write_config()
   if success and packed then
     local write_success, err = nfs.write(config_path, packed)
     if not write_success then
-      error("Failed to write config file: " .. (err or "unknown error"))
+      print(
+        "[Brainstorm] Failed to write config file: " .. (err or "unknown error")
+      )
     end
   end
 end
@@ -130,10 +147,89 @@ function Brainstorm.init()
   assert(load(nfs.read(Brainstorm.PATH .. "/UI/ui.lua")))()
 end
 
+-- Save state functionality
+local save_state_keys = { "1", "2", "3", "4", "5" }
+
+function Brainstorm.save_state_alert(text)
+  G.E_MANAGER:add_event(Event({
+    trigger = "after",
+    delay = 0.4,
+    func = function()
+      attention_text({
+        text = text,
+        scale = 0.7,
+        hold = 3,
+        major = G.STAGE == G.STAGES.RUN and G.play or G.title_top,
+        backdrop_colour = G.C.SECONDARY_SET.Tarot,
+        align = "cm",
+        offset = { x = 0, y = -3.5 },
+        silent = true,
+      })
+      G.E_MANAGER:add_event(Event({
+        trigger = "after",
+        delay = 0.06 * G.SETTINGS.GAMESPEED,
+        blockable = false,
+        blocking = false,
+        func = function()
+          play_sound("other1", 0.76, 0.4)
+          return true
+        end,
+      }))
+      return true
+    end,
+  }))
+end
+
+function Brainstorm.save_game_state(slot)
+  if G.STAGE == G.STAGES.RUN then
+    local save_path = G.SETTINGS.profile
+      .. "/"
+      .. "save_state_"
+      .. slot
+      .. ".jkr"
+    compress_and_save(save_path, G.ARGS.save_run)
+    Brainstorm.save_state_alert("Saved state to slot [" .. slot .. "]")
+    return true
+  end
+  return false
+end
+
+function Brainstorm.load_game_state(slot)
+  local save_path = G.SETTINGS.profile .. "/" .. "save_state_" .. slot .. ".jkr"
+  local saved_game = get_compressed(save_path)
+
+  if saved_game then
+    G:delete_run()
+    G.SAVED_GAME = STR_UNPACK(saved_game)
+    G:start_run({ savetext = G.SAVED_GAME })
+    Brainstorm.save_state_alert("Loaded state from slot [" .. slot .. "]")
+    return true
+  else
+    Brainstorm.save_state_alert("No save in slot [" .. slot .. "]")
+    return false
+  end
+end
+
 local key_press_update_ref = Controller.key_press_update
 function Controller:key_press_update(key, dt)
   key_press_update_ref(self, key, dt)
   local keybinds = Brainstorm.config.keybinds
+
+  -- Save state functionality
+  for _, slot in ipairs(save_state_keys) do
+    if key == slot then
+      -- Save state
+      if love.keyboard.isDown(keybinds.save_state) then
+        Brainstorm.save_game_state(slot)
+      end
+      -- Load state
+      if love.keyboard.isDown(keybinds.load_state) then
+        Brainstorm.load_game_state(slot)
+      end
+    end
+  end
+
+  -- Original reroll functionality
   if love.keyboard.isDown(keybinds.modifier) then
     if key == keybinds.f_reroll then
       Brainstorm.reroll()
@@ -203,35 +299,40 @@ function Brainstorm.is_valid_deck(
   local total_cards = #G.playing_cards
   local face_card_count = deck_data.face_card_count or 0
   local ace_count = deck_data.ace_count or 0
-  local suit_count = deck_data.suit_count or 0
+  local suit_count = deck_data.suit_count or {}
 
   -- Check Face Cards & Aces
   if face_card_count < min_face_cards then
-    --print("Not enough face cards:", face_card_count, "Required:", min_face_cards)
+    --print("Deck has", face_card_count, "face cards, need", min_face_cards)
     return false
   end
   if ace_count < min_aces then
-    --print("Not enough aces:", ace_count, "Required:", min_aces)
+    --print("Deck has", ace_count, "aces, need", min_aces)
     return false
   end
 
-  -- Check suit distribution
-  local sorted_suits = {}
-  for suit, count in pairs(suit_count) do
-    table.insert(sorted_suits, { suit = suit, count = count })
-  end
-  table.sort(sorted_suits, function(a, b)
-    return a.count > b.count
-  end)
+  -- Check suit distribution (only if enabled - 0 means disabled)
+  if dominant_suit_ratio and dominant_suit_ratio > 0 then
+    local sorted_suits = {}
+    for suit, count in pairs(suit_count) do
+      table.insert(sorted_suits, { suit = suit, count = count })
+    end
 
-  -- Sum the top 2 suit counts
-  local top_2_suit_count = sorted_suits[1].count
-    + (sorted_suits[2] and sorted_suits[2].count or 0)
-  local top_2_suit_percentage = top_2_suit_count / total_cards
+    if #sorted_suits > 0 then
+      table.sort(sorted_suits, function(a, b)
+        return a.count > b.count
+      end)
 
-  if top_2_suit_percentage < dominant_suit_ratio then
-    --print("Suit distribution is too spread out.")
-    return false
+      -- Sum the top 2 suit counts
+      local top_2_suit_count = sorted_suits[1].count
+        + (sorted_suits[2] and sorted_suits[2].count or 0)
+      local top_2_suit_percentage = top_2_suit_count / total_cards
+
+      if top_2_suit_percentage < dominant_suit_ratio then
+        --print("Suit ratio is", string.format("%.1f%%", top_2_suit_percentage * 100), "need", string.format("%.1f%%", dominant_suit_ratio * 100))
+        return false
+      end
+    end
   end
 
   return true
@@ -328,7 +429,8 @@ local function init_ffi()
     ]]
     )
     if not success then
-      error("Failed to initialize FFI: " .. tostring(err))
+      print("[Brainstorm] Failed to initialize FFI: " .. tostring(err))
+      return false
     end
     ffi_loaded = true
   end
@@ -354,10 +456,13 @@ function Brainstorm.auto_reroll()
   )
 
   -- Load native DLL with error handling
-  init_ffi()
+  if not init_ffi() then
+    print("[Brainstorm] FFI initialization failed")
+    return nil
+  end
   local success, immolate = pcall(ffi.load, Brainstorm.PATH .. "/Immolate.dll")
   if not success then
-    error("Failed to load Immolate.dll: " .. tostring(immolate))
+    print("[Brainstorm] Failed to load Immolate.dll: " .. tostring(immolate))
     return nil
   end
   -- Extract pack name from configuration
@@ -493,7 +598,6 @@ function Brainstorm.attention_text(args)
                   float = true,
                   shadow = true,
                   silent = not args.noisy,
-                  args.scale,
                   pop_in = 0,
                   pop_in_rate = 6,
                   rotate = args.rotate or nil,
@@ -564,7 +668,6 @@ function Brainstorm.remove_attention_text(args)
           args.text:pop_out(2)
         end
       else
-        --args.AT:align_to_attach()
         args.fade = math.max(0, 1 - 3 * (G.TIMERS.TOTAL - args.start_time))
         if args.cover_colour then
           args.cover_colour[4] = math.min(args.cover_colour[4], 2 * args.fade)

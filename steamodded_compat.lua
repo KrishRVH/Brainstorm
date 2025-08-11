@@ -4,4 +4,4 @@
 --- PREFIX: brainstorm
 --- MOD_AUTHOR: [OceanRamen]
 --- MOD_DESCRIPTION: The Balatro Reroll Mod.
---- VERSION: 2.0.0-beta
+--- VERSION: 2.2.0-alpha
