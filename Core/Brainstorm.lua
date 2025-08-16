@@ -932,70 +932,58 @@ function Brainstorm.auto_reroll()
     key = Brainstorm.config.ar_filters.voucher_name,
   })
 
-  -- For dual tag search, we need a different approach
-  -- The DLL can only check if a tag exists, not which blind position it's in
-  -- For dual tags, we check if at least ONE tag exists, then validate both after restart
+  -- Detect which DLL version we have and call appropriately
   local result = nil
-  if tag2_name ~= "" then
-    -- For same tag twice, only check once with DLL
-    if tag_name == tag2_name then
-      local call_success, call_result = pcall(function()
-        return immolate.brainstorm(
-          seed_found,
-          voucher_name,
-          pack_name,
-          tag_name,
-          Brainstorm.config.ar_filters.soul_skip,
-          Brainstorm.config.ar_filters.inst_observatory,
-          Brainstorm.config.ar_filters.inst_perkeo
-        )
-      end)
-      if call_success and call_result then
-        result = call_result
-        -- Note: We still need to validate BOTH positions have the tag after restart
-      end
-    else
-      -- Different tags: Check if first tag exists
-      local call_success1, result1 = pcall(function()
-        return immolate.brainstorm(
-          seed_found,
-          voucher_name,
-          pack_name,
-          tag_name,
-          Brainstorm.config.ar_filters.soul_skip,
-          Brainstorm.config.ar_filters.inst_observatory,
-          Brainstorm.config.ar_filters.inst_perkeo
-        )
-      end)
-      
-      -- Only accept seeds that have the first tag
-      -- We'll check for the second tag after restart
-      if call_success1 and result1 then
-        result = result1
-        -- Note: This seed has tag1, we'll validate tag2 exists after restart
-      end
+  
+  -- Try calling with 8 parameters (enhanced DLL with dual tag support)
+  local enhanced_success, enhanced_result = pcall(function()
+    return immolate.brainstorm(
+      seed_found,
+      voucher_name,
+      pack_name, 
+      tag_name,
+      tag2_name,  -- 8th parameter for enhanced DLL
+      Brainstorm.config.ar_filters.soul_skip,
+      Brainstorm.config.ar_filters.inst_observatory,
+      Brainstorm.config.ar_filters.inst_perkeo
+    )
+  end)
+  
+  if enhanced_success then
+    -- Enhanced DLL detected and working!
+    result = enhanced_result
+    if tag2_name ~= "" and Brainstorm.debug.enabled then
+      print("[Brainstorm] Using enhanced DLL for dual tag search (fast mode)")
     end
   else
-    -- Single tag check (original logic)
+    -- Fall back to old DLL with 7 parameters
+    if Brainstorm.debug.enabled then
+      print("[Brainstorm] Using original DLL (compatibility mode)")
+      if tag2_name ~= "" then
+        print("[Brainstorm] WARNING: Dual tag search will be slower")
+        print("[Brainstorm] Install enhanced DLL for 10-100x faster searches")
+      end
+    end
+    
+    -- Old DLL only checks for first tag
     local call_success, call_result = pcall(function()
       return immolate.brainstorm(
         seed_found,
         voucher_name,
         pack_name,
-        tag_name,
+        tag_name,  -- Only first tag for old DLL
         Brainstorm.config.ar_filters.soul_skip,
         Brainstorm.config.ar_filters.inst_observatory,
         Brainstorm.config.ar_filters.inst_perkeo
       )
     end)
-
-    if not call_success then
-      print(
-        "Error calling native brainstorm function: " .. tostring(call_result)
-      )
+    
+    if call_success then
+      result = call_result
+    else
+      print("[Brainstorm] DLL call failed: " .. tostring(call_result))
       return nil
     end
-    result = call_result
   end
 
   seed_found = result and ffi.string(result) or nil
