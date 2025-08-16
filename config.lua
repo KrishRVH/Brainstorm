@@ -1,1 +1,32 @@
-return {["enable"]=true,["debug_enabled"]=true,["keybinds"]={["save_state"]="z",["f_reroll"]="r",["modifier"]="lctrl",["load_state"]="x",["options"]="t",["a_reroll"]="a",},["ar_prefs"]={["face_count"]=0,["suit_ratio_decimal"]=0,["suit_ratio_id"]=1,["suit_ratio_percent"]="Disabled",["spf_int"]=5000,["spf_id"]=8,},["ar_filters"]={["inst_perkeo"]=false,["tag_name"]="tag_skip",["soul_skip"]=0,["tag_id"]=15,["inst_observatory"]=false,["voucher_name"]="",["voucher_id"]=1,["pack_id"]=1,["pack"]={},},["keybind_autoreroll"]="r",}
+return {
+  ["enable"] = true,
+  ["debug_enabled"] = true,
+  ["keybinds"] = {
+    ["save_state"] = "z",
+    ["f_reroll"] = "r",
+    ["modifier"] = "lctrl",
+    ["load_state"] = "x",
+    ["options"] = "t",
+    ["a_reroll"] = "a",
+  },
+  ["ar_prefs"] = {
+    ["face_count"] = 0,
+    ["suit_ratio_decimal"] = 0,
+    ["suit_ratio_id"] = 1,
+    ["suit_ratio_percent"] = "Disabled",
+    ["spf_int"] = 5000,
+    ["spf_id"] = 8,
+  },
+  ["ar_filters"] = {
+    ["inst_perkeo"] = false,
+    ["tag_name"] = "tag_skip",
+    ["soul_skip"] = 0,
+    ["tag_id"] = 15,
+    ["inst_observatory"] = false,
+    ["voucher_name"] = "",
+    ["voucher_id"] = 1,
+    ["pack_id"] = 1,
+    ["pack"] = {},
+  },
+  ["keybind_autoreroll"] = "r",
+}

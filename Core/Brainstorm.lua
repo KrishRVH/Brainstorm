@@ -27,6 +27,8 @@ Brainstorm.config = {
     voucher_id = 1,
     tag_name = "tag_charm",
     tag_id = 2,
+    tag2_name = "",
+    tag2_id = 1,
     soul_skip = 1,
     inst_observatory = false,
     inst_perkeo = false,
@@ -261,6 +263,55 @@ function Controller:key_press_update(key, dt)
       else
         Brainstorm.ar_active = true
       end
+    end
+  end
+end
+
+function Brainstorm.check_dual_tags()
+  -- Check if both specified tags are present in the starting blind options
+  local tag1 = Brainstorm.config.ar_filters.tag_name
+  local tag2 = Brainstorm.config.ar_filters.tag2_name
+
+  if not tag2 or tag2 == "" then
+    return true -- No second tag to check
+  end
+
+  -- Tags are stored in G.GAME.round_resets.blind_tags.Small and .Big
+  if not G.GAME or not G.GAME.round_resets or not G.GAME.round_resets.blind_tags then
+    return false
+  end
+
+  local small_blind_tag = G.GAME.round_resets.blind_tags.Small
+  local big_blind_tag = G.GAME.round_resets.blind_tags.Big
+
+  print(string.format("[Brainstorm] Blind tags found: Small=%s, Big=%s", 
+    tostring(small_blind_tag), tostring(big_blind_tag)))
+  print(string.format("[Brainstorm] Looking for: tag1=%s, tag2=%s", tag1, tag2))
+
+  -- Special case: if looking for the same tag twice, need BOTH positions to have it
+  if tag1 == tag2 then
+    local both_match = (small_blind_tag == tag1 and big_blind_tag == tag1)
+    if both_match then
+      print("[Brainstorm] BOTH TAGS FOUND! Both blinds have " .. tag1)
+      return true
+    else
+      print(string.format("[Brainstorm] Need both blinds to have %s, but only found in: %s", 
+        tag1, 
+        (small_blind_tag == tag1 and "Small") or (big_blind_tag == tag1 and "Big") or "neither"))
+      return false
+    end
+  else
+    -- Different tags: check if both are present (order doesn't matter)
+    local has_tag1 = (small_blind_tag == tag1 or big_blind_tag == tag1)
+    local has_tag2 = (small_blind_tag == tag2 or big_blind_tag == tag2)
+
+    if has_tag1 and has_tag2 then
+      print("[Brainstorm] BOTH TAGS FOUND! Accepting seed.")
+      return true
+    else
+      print(string.format("[Brainstorm] Not both tags present: has_tag1=%s, has_tag2=%s", 
+        tostring(has_tag1), tostring(has_tag2)))
+      return false
     end
   end
 end
@@ -613,6 +664,7 @@ function Game:update(dt)
         Brainstorm.config.ar_filters.voucher_name ~= ""
       )
         or (Brainstorm.config.ar_filters.tag_name ~= "")
+        or (Brainstorm.config.ar_filters.tag2_name ~= "")
         or (#Brainstorm.config.ar_filters.pack > 0)
 
       if has_erratic_requirements then
@@ -674,8 +726,12 @@ function Game:update(dt)
             local deck_data = Brainstorm.analyze_deck()
             Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
 
+            -- Also check dual tags if configured
+            local tags_valid = Brainstorm.check_dual_tags()
+
             if
-              Brainstorm.is_valid_deck(
+              tags_valid
+              and Brainstorm.is_valid_deck(
                 deck_data,
                 Brainstorm.config.ar_prefs.face_count,
                 0,
@@ -706,12 +762,21 @@ function Game:update(dt)
               seed = seed_found,
               challenge = challenge,
             })
-            G.GAME.used_filter = true
-            G.GAME.seeded = false
-            Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
-            Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
-            Brainstorm.stop_auto_reroll(true)
-            break
+
+            -- Check dual tags if configured
+            local tags_valid = Brainstorm.check_dual_tags()
+
+            if tags_valid then
+              G.GAME.used_filter = true
+              G.GAME.seeded = false
+              Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
+              Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
+              Brainstorm.stop_auto_reroll(true)
+              break
+            else
+              -- Tags don't match, continue searching
+              Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
+            end
           end
         end
       end
@@ -817,27 +882,81 @@ function Brainstorm.auto_reroll()
     set = "Tag",
     key = Brainstorm.config.ar_filters.tag_name,
   })
+  local tag2_name = ""
+  if
+    Brainstorm.config.ar_filters.tag2_name
+    and Brainstorm.config.ar_filters.tag2_name ~= ""
+  then
+    tag2_name = localize({
+      type = "name_text",
+      set = "Tag",
+      key = Brainstorm.config.ar_filters.tag2_name,
+    })
+  end
   local voucher_name = localize({
     type = "name_text",
     set = "Voucher",
     key = Brainstorm.config.ar_filters.voucher_name,
   })
-  -- Call native function with error handling
-  local call_success, result = pcall(function()
-    return immolate.brainstorm(
-      seed_found,
-      voucher_name,
-      pack_name,
-      tag_name,
-      Brainstorm.config.ar_filters.soul_skip,
-      Brainstorm.config.ar_filters.inst_observatory,
-      Brainstorm.config.ar_filters.inst_perkeo
-    )
-  end)
 
-  if not call_success then
-    print("Error calling native brainstorm function: " .. tostring(result))
-    return nil
+  -- For dual tag search, we need a different approach
+  -- The DLL can only check if a tag exists, not which blind position it's in
+  -- So we first check if either tag exists, then validate both after restart
+  local result = nil
+  if tag2_name ~= "" then
+    -- Check if EITHER tag is present (we'll validate both later)
+    local call_success1, result1 = pcall(function()
+      return immolate.brainstorm(
+        seed_found,
+        voucher_name,
+        pack_name,
+        tag_name,
+        Brainstorm.config.ar_filters.soul_skip,
+        Brainstorm.config.ar_filters.inst_observatory,
+        Brainstorm.config.ar_filters.inst_perkeo
+      )
+    end)
+
+    if call_success1 and result1 then
+      result = result1
+    else
+      -- If first tag not found, try second tag
+      local call_success2, result2 = pcall(function()
+        return immolate.brainstorm(
+          seed_found,
+          voucher_name,
+          pack_name,
+          tag2_name,
+          Brainstorm.config.ar_filters.soul_skip,
+          Brainstorm.config.ar_filters.inst_observatory,
+          Brainstorm.config.ar_filters.inst_perkeo
+        )
+      end)
+      if call_success2 and result2 then
+        result = result2
+      end
+    end
+  else
+    -- Single tag check (original logic)
+    local call_success, call_result = pcall(function()
+      return immolate.brainstorm(
+        seed_found,
+        voucher_name,
+        pack_name,
+        tag_name,
+        Brainstorm.config.ar_filters.soul_skip,
+        Brainstorm.config.ar_filters.inst_observatory,
+        Brainstorm.config.ar_filters.inst_perkeo
+      )
+    end)
+
+    if not call_success then
+      print(
+        "Error calling native brainstorm function: " .. tostring(call_result)
+      )
+      return nil
+    end
+    result = call_result
   end
 
   seed_found = result and ffi.string(result) or nil

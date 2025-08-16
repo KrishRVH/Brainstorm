@@ -172,6 +172,12 @@ G.FUNCS.change_target_tag = function(x)
   Brainstorm.write_config()
 end
 
+G.FUNCS.change_target_tag2 = function(x)
+  Brainstorm.config.ar_filters.tag2_id = x.to_key
+  Brainstorm.config.ar_filters.tag2_name = tag_list[x.to_val]
+  Brainstorm.write_config()
+end
+
 G.FUNCS.change_soul_count = function(x)
   Brainstorm.config.ar_filters.soul_skip = x.to_val
   Brainstorm.write_config()
@@ -224,12 +230,20 @@ function create_tabs(args)
               },
               nodes = {
                 create_option_cycle({
-                  label = "AR: TAG SEARCH",
+                  label = "AR: TAG 1 SEARCH",
                   scale = 0.8,
                   w = 4,
                   options = tag_keys,
                   opt_callback = "change_target_tag",
                   current_option = Brainstorm.config.ar_filters.tag_id or 1,
+                }),
+                create_option_cycle({
+                  label = "AR: TAG 2 SEARCH",
+                  scale = 0.8,
+                  w = 4,
+                  options = tag_keys,
+                  opt_callback = "change_target_tag2",
+                  current_option = Brainstorm.config.ar_filters.tag2_id or 1,
                 }),
                 create_option_cycle({
                   label = "AR: VOUCHER SEARCH",
