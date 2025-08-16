@@ -16,7 +16,7 @@ local tag_list = {
   ["Double Tag"] = "tag_double",
   ["Coupon Tag"] = "tag_coupon",
   ["Economy Tag"] = "tag_economy",
-  ["Skip Tag"] = "tag_skip",
+  ["Speed Tag"] = "tag_skip",
   ["D6 Tag"] = "tag_d_six",
 }
 

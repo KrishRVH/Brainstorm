@@ -1,110 +1,111 @@
-# Immolate Enhanced - Erratic Deck Support for Brainstorm
+# Brainstorm - Advanced Seed Searcher for Balatro
 
 ## Overview
 
-This repository contains enhancements to the original Immolate OpenCL seed searcher to add full Erratic deck support for the Brainstorm mod.
-
-## What's Included
-
-### Core Components
-
-1. **Original Immolate** (`ImmolateSourceCode/`)
-   - GPU-accelerated OpenCL seed searcher
-   - Handles vouchers, tags, and pack filtering
-   - 100,000+ seeds/second performance
-
-2. **Erratic Deck Enhancements** 
-   - `filters/erratic_brainstorm.cl` - New filter for Erratic deck requirements
-   - `lib/erratic_support.cl` - Helper functions for deck analysis
-   - Full support for face card counting and suit ratio filtering
-
-3. **Analysis Tools**
-   - `balatro_rng_analyzer.c` - Demonstrates RNG flaws (glitched seeds)
-   - `README_GLITCHED_SEEDS.md` - Documentation of RNG issues
+Brainstorm is a comprehensive mod for Balatro that provides:
+- **In-game auto-reroll** with customizable filters (vouchers, tags, packs, Erratic deck requirements)
+- **Save state system** with 5 slots for experimentation
+- **GPU-accelerated seed searching** via enhanced Immolate (100,000+ seeds/second)
+- **Full Erratic deck support** including face card and suit ratio filtering
 
 ## Quick Start
 
-### Using Enhanced Immolate
+### 1. Install the Mod
 
-1. **Build the enhanced version**:
-   ```cmd
-   build_immolate_enhanced.bat
-   ```
+Copy to `%AppData%\Balatro\Mods\Brainstorm\`:
+- `Core\` folder
+- `UI\` folder  
+- `config.lua`
+- `lovely.toml`
+- `nativefs.lua`
+- `steamodded_compat.lua`
+- `Immolate.dll`
 
-2. **Search for Erratic seeds with specific requirements**:
-   ```cmd
-   cd ImmolateSourceCode
-   
-   # Find seeds with 20+ face cards and 50%+ of one suit
-   Immolate.exe -f erratic_brainstorm -n 100000 -c 2000
-   
-   # Test the infamous glitched seed
-   Immolate.exe -f erratic_brainstorm -s 7LB2WVPK -n 1
-   ```
+### 2. Use In-Game
 
-3. **Use with Brainstorm**:
-   - Keep original `Immolate.dll` for voucher/tag filtering
-   - Use enhanced Immolate for Erratic deck pre-filtering
-   - Brainstorm validates final results in-game
+| Key | Action |
+|-----|--------|
+| `Ctrl+T` | Open settings |
+| `Ctrl+R` | Manual reroll |
+| `Ctrl+A` | Toggle auto-reroll |
+| `Z+1-5` | Save state to slot |
+| `X+1-5` | Load state from slot |
 
-## Filter Parameters
+### 3. (Optional) Build GPU Tool for Erratic Pre-Search
 
-Edit `filters/erratic_brainstorm.cl` to adjust:
+```cmd
+# Build on Windows (not WSL)
+build_immolate_enhanced.bat
 
-```c
-const int MIN_FACE_CARDS = 20;      // Minimum face cards
-const int MAX_FACE_CARDS = 52;      // Maximum (52 = no limit)
-const float MIN_SUIT_RATIO = 0.5;   // Minimum suit ratio (50%)
-const int TARGET_SUIT = -1;         // -1=any, 0=C, 1=D, 2=H, 3=S
+# Search for Erratic seeds
+cd ImmolateSourceCode
+Immolate.exe -f erratic_brainstorm -n 1000000 -c 2000
 ```
+
+## Realistic Filter Settings
+
+### Face Cards (Erratic Deck)
+- **Easy**: 10-15 face cards  
+- **Medium**: 15-20 face cards
+- **Hard**: 20-23 face cards
+- **Nearly Impossible**: 25+ face cards (extremely rare)
+
+### Suit Ratio (Erratic Deck)  
+- **Easy**: 40-50% single suit
+- **Medium**: 50-65% single suit
+- **Hard**: 65-75% single suit
+- **Mathematically Impossible**: 80%+ single suit
+
+To adjust, edit `ImmolateSourceCode/filters/erratic_brainstorm.cl`
 
 ## Performance
 
-| Method | Seeds/Second | Use Case |
-|--------|--------------|----------|
-| Game Restarts | ~110 | Final validation |
-| CPU Implementation | ~10,000 | Learning/testing |
-| **GPU Immolate** | **100,000+** | **Production searching** |
+| Hardware | Expected Speed |
+|----------|---------------|
+| CPU only | 1-5K seeds/sec |
+| Integrated GPU | 10-50K seeds/sec |
+| Gaming GPU | 100K+ seeds/sec |
 
 ## How It Works
 
-The enhancement replicates Balatro's Erratic deck generation:
+1. **In-Game (Brainstorm Mod)**:
+   - Hooks into game update loop
+   - Tests seeds by restarting game
+   - ~110 seeds/second maximum
+   - Uses original `Immolate.dll` for voucher/tag filtering
 
-1. Each card position randomly selects from all 52 cards
-2. Uses the same RNG constants: `1.72431234` and `2.134453429141`
-3. Maintains state through the node caching system
-4. Accurately reproduces glitched seeds
+2. **GPU Tool (Enhanced Immolate)**:
+   - Replicates Balatro's exact RNG
+   - Tests 100,000+ seeds/second
+   - Full Erratic deck generation
+   - Accurately handles glitched seeds (e.g., `7LB2WVPK`)
 
-## Known Issues
+## Development
 
-### The RNG Flaw
+See [CLAUDE.md](CLAUDE.md) for:
+- Architecture details
+- Code style guide
+- Testing procedures
+- Future roadmap
 
-Balatro's RNG has a self-feeding issue identified by the community:
-- Lacks entropy (no external randomness)
-- Can produce statistically impossible seeds
-- Example: Seed `7LB2WVPK` generates 52 copies of 10 of Spades
+## Troubleshooting
 
-Our implementation **accurately replicates this flaw** for compatibility.
+### "No OpenCL devices"
+Install GPU drivers:
+- NVIDIA: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
+- AMD: Latest drivers with OpenCL
+- Intel: Intel Graphics Driver
 
-## Testing
+### "Mod not loading"
+1. Check Lovely injector is installed
+2. Verify files in correct folder
+3. Press F2 in game for console/errors
 
-Run the test suite:
-```cmd
-test_immolate_erratic.bat
-```
-
-This will:
-1. Test known glitched seeds
-2. Search for high face card counts
-3. Verify suit ratio filtering
-
-## Integration with Brainstorm
-
-The enhanced Immolate works alongside Brainstorm:
-
-1. **Pre-filtering**: Immolate quickly eliminates bad seeds
-2. **Final validation**: Brainstorm verifies in-game
-3. **Best of both**: GPU speed + game accuracy
+### "Can't find good seeds"
+Your criteria may be too strict:
+- Lower requirements
+- Run longer searches
+- Check realistic settings above
 
 ## Credits
 
@@ -112,7 +113,3 @@ The enhanced Immolate works alongside Brainstorm:
 - **RNG Analysis**: jimbo_extreme1 (Reddit)
 - **Brainstorm Mod**: Original authors
 - **Enhancements**: This implementation
-
-## License
-
-Enhancements are provided as-is for the Balatro modding community.
