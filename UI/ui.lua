@@ -132,7 +132,7 @@ local tag_keys = {
   "Juggle Tag",
   "Coupon Tag",
   "Economy Tag",
-  "Skip Tag",
+  "Speed Tag",
   "D6 Tag",
 }
 local pack_keys = {
