@@ -1,6 +1,16 @@
+-- Brainstorm UI Module
+-- Provides the settings interface and configuration callbacks
+-- Author: Community Edition v3.0
+
 local lovely = require("lovely")
 local nativefs = require("nativefs")
 
+-- Performance: Cache frequently used functions
+local ipairs = ipairs
+local pairs = pairs
+
+-- Tag definitions mapping display names to internal IDs
+-- Note: "Speed Tag" is internally called "tag_skip" in Balatro
 local tag_list = {
   ["None"] = "",
   ["Uncommon Tag"] = "tag_uncommon",
@@ -20,6 +30,7 @@ local tag_list = {
   ["D6 Tag"] = "tag_d_six",
 }
 
+-- Voucher definitions for first shop filtering
 local voucher_list = {
   ["None"] = "",
   ["Overstock"] = "v_overstock_norm",
@@ -40,6 +51,8 @@ local voucher_list = {
   ["Paint Brush"] = "v_paint_brush",
 }
 
+-- Pack definitions for first pack filtering
+-- Each pack type can have multiple internal variants
 local pack_list = {
   ["None"] = {},
   ["Normal Arcana"] = {
@@ -73,26 +86,30 @@ local pack_list = {
   ["Jumbo Spectral"] = { "p_spectral_jumbo_1" },
   ["Mega Spectral"] = { "p_spectral_mega_1" },
 }
+-- Seeds per second (SPF) options for auto-reroll speed
+-- Higher values test more seeds but may cause lag
 local spf_list = {
-  ["250"] = 250,
-  ["500"] = 500,
+  ["250"] = 250, -- Conservative, no lag
+  ["500"] = 500, -- Default balanced
   ["750"] = 750,
-  ["1000"] = 1000,
-  ["2000"] = 2000,
-  ["3000"] = 3000,
-  ["4000"] = 4000,
-  ["5000"] = 5000,
+  ["1000"] = 1000, -- Fast
+  ["2000"] = 2000, -- Very fast
+  ["3000"] = 3000, -- May cause lag
+  ["4000"] = 4000, -- Likely causes lag
+  ["5000"] = 5000, -- Maximum speed
 }
 
 local spf_keys = { "250", "500", "750", "1000", "2000", "3000", "4000", "5000" }
 
+-- Suit ratio options for Erratic deck filtering
+-- Represents minimum percentage of cards in top 2 suits
 local ratio_list = {
   ["Disabled"] = 0,
-  ["50%"] = 0.5,
-  ["60%"] = 0.6,
-  ["65%"] = 0.65,
-  ["70%"] = 0.7,
-  ["75%"] = 0.75,
+  ["50%"] = 0.5, -- Common
+  ["60%"] = 0.6, -- Uncommon
+  ["65%"] = 0.65, -- Rare
+  ["70%"] = 0.7, -- Very rare
+  ["75%"] = 0.75, -- Extremely rare (maximum achievable)
 }
 
 local ratio_keys = { "Disabled", "50%", "60%", "65%", "70%", "75%" }
@@ -154,51 +171,65 @@ local pack_keys = {
   "Mega Spectral",
 }
 
+-- UI callback functions for settings changes
+-- These are called when users modify settings in the Brainstorm tab
+-- Cache references for better performance
+local config = Brainstorm.config
+local write_config = Brainstorm.write_config
+
+-- Voucher selection callback
 G.FUNCS.change_target_voucher = function(x)
-  Brainstorm.config.ar_filters.voucher_id = x.to_key
-  Brainstorm.config.ar_filters.voucher_name = voucher_list[x.to_val]
-  Brainstorm.write_config()
+  config.ar_filters.voucher_id = x.to_key
+  config.ar_filters.voucher_name = voucher_list[x.to_val]
+  write_config()
 end
 
+-- Pack selection callback
 G.FUNCS.change_target_pack = function(x)
-  Brainstorm.config.ar_filters.pack_id = x.to_key
-  Brainstorm.config.ar_filters.pack = pack_list[x.to_val]
-  Brainstorm.write_config()
+  config.ar_filters.pack_id = x.to_key
+  config.ar_filters.pack = pack_list[x.to_val]
+  write_config()
 end
 
+-- First tag selection callback
 G.FUNCS.change_target_tag = function(x)
-  Brainstorm.config.ar_filters.tag_id = x.to_key
-  Brainstorm.config.ar_filters.tag_name = tag_list[x.to_val]
-  Brainstorm.write_config()
+  config.ar_filters.tag_id = x.to_key
+  config.ar_filters.tag_name = tag_list[x.to_val]
+  write_config()
 end
 
+-- Second tag selection callback (for dual tag searches)
 G.FUNCS.change_target_tag2 = function(x)
-  Brainstorm.config.ar_filters.tag2_id = x.to_key
-  Brainstorm.config.ar_filters.tag2_name = tag_list[x.to_val]
-  Brainstorm.write_config()
+  config.ar_filters.tag2_id = x.to_key
+  config.ar_filters.tag2_name = tag_list[x.to_val]
+  write_config()
 end
 
+-- Soul skip count callback (number of shops with The Soul)
 G.FUNCS.change_soul_count = function(x)
-  Brainstorm.config.ar_filters.soul_skip = x.to_val
-  Brainstorm.write_config()
+  config.ar_filters.soul_skip = x.to_val
+  write_config()
 end
 
+-- Seeds per second (reroll speed) callback
 G.FUNCS.change_spf = function(x)
-  Brainstorm.config.ar_prefs.spf_id = x.to_key
-  Brainstorm.config.ar_prefs.spf_int = spf_list[x.to_val]
-  Brainstorm.write_config()
+  config.ar_prefs.spf_id = x.to_key
+  config.ar_prefs.spf_int = spf_list[x.to_val]
+  write_config()
 end
 
+-- Minimum face cards callback (for Erratic deck)
 G.FUNCS.change_face_count = function(x)
-  Brainstorm.config.ar_prefs.face_count = x.to_val
-  Brainstorm.write_config()
+  config.ar_prefs.face_count = x.to_val
+  write_config()
 end
 
+-- Suit ratio callback (for Erratic deck)
 G.FUNCS.change_suit_ratio = function(x)
-  Brainstorm.config.ar_prefs.suit_ratio_id = x.to_key
-  Brainstorm.config.ar_prefs.suit_ratio_percent = x.to_val
-  Brainstorm.config.ar_prefs.suit_ratio_decimal = ratio_list[x.to_val]
-  Brainstorm.write_config()
+  config.ar_prefs.suit_ratio_id = x.to_key
+  config.ar_prefs.suit_ratio_percent = x.to_val
+  config.ar_prefs.suit_ratio_decimal = ratio_list[x.to_val]
+  write_config()
 end
 
 Brainstorm.opt_ref = G.FUNCS.options
@@ -206,9 +237,13 @@ G.FUNCS.options = function(e)
   Brainstorm.opt_ref(e)
 end
 
+-- Hook into the game's settings tab creation
+-- Adds the Brainstorm tab to the settings menu
 local ct = create_tabs
 function create_tabs(args)
+  -- Check if this is the main settings tabs (tab_h == 7.05)
   if args and args.tab_h == 7.05 then
+    -- Add Brainstorm tab
     args.tabs[#args.tabs + 1] = {
       label = "Brainstorm",
       tab_definition_function = function()
@@ -295,18 +330,14 @@ function create_tabs(args)
                   scale = 0.8,
                   ref_table = Brainstorm.config.ar_filters,
                   ref_value = "inst_observatory",
-                  callback = function(_set_toggle)
-                    Brainstorm.write_config()
-                  end,
+                  callback = write_config,
                 }),
                 create_toggle({
                   label = "AR: INST PERKEO",
                   scale = 0.8,
                   ref_table = Brainstorm.config.ar_filters,
                   ref_value = "inst_perkeo",
-                  callback = function(_set_toggle)
-                    Brainstorm.write_config()
-                  end,
+                  callback = write_config,
                 }),
                 create_option_cycle({
                   label = "ED: Min. # of Face Cards",
@@ -314,8 +345,10 @@ function create_tabs(args)
                   w = 4,
                   options = (function()
                     local opts = {}
+                    -- Maximum realistic face cards is 23
+                    -- (25 is theoretically possible but extremely rare)
                     for i = 0, 23 do
-                      opts[i + 1] = i
+                      opts[#opts + 1] = i
                     end
                     return opts
                   end)(),

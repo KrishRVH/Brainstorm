@@ -1,115 +1,79 @@
-# Brainstorm - Advanced Seed Searcher for Balatro
+# Brainstorm v3.0 - Lightning-Fast Seed Filtering for Balatro
 
-## Overview
-
-Brainstorm is a comprehensive mod for Balatro that provides:
-- **In-game auto-reroll** with customizable filters (vouchers, tags, packs, Erratic deck requirements)
-- **Save state system** with 5 slots for experimentation
-- **GPU-accelerated seed searching** via enhanced Immolate (100,000+ seeds/second)
-- **Full Erratic deck support** including face card and suit ratio filtering
+A high-performance mod that finds perfect seeds in seconds instead of hours. Features dual tag searching, Erratic deck filtering, and save states.
 
 ## Quick Start
 
-### 1. Install the Mod
+```bash
+# Deploy to Balatro
+./deploy.sh
 
-Copy to `%AppData%\Balatro\Mods\Brainstorm\`:
-- `Core\` folder
-- `UI\` folder  
-- `config.lua`
-- `lovely.toml`
-- `nativefs.lua`
-- `steamodded_compat.lua`
-- `Immolate.dll`
+# Build DLL from source (optional)
+cd ImmolateCPP && ./build_simple.sh
+```
 
-### 2. Use In-Game
+## In-Game Usage
 
 | Key | Action |
 |-----|--------|
 | `Ctrl+T` | Open settings |
 | `Ctrl+R` | Manual reroll |
 | `Ctrl+A` | Toggle auto-reroll |
-| `Z+1-5` | Save state to slot |
-| `X+1-5` | Load state from slot |
+| `Z+1-5` | Save state |
+| `X+1-5` | Load state |
 
-### 3. (Optional) Build GPU Tool for Erratic Pre-Search
+## Features
 
-```cmd
-# Build on Windows (not WSL)
-build_immolate_enhanced.bat
-
-# Search for Erratic seeds
-cd ImmolateSourceCode
-Immolate.exe -f erratic_brainstorm -n 1000000 -c 2000
-```
-
-## Realistic Filter Settings
-
-### Face Cards (Erratic Deck)
-- **Easy**: 10-15 face cards  
-- **Medium**: 15-20 face cards
-- **Hard**: 20-23 face cards
-- **Nearly Impossible**: 25+ face cards (extremely rare)
-
-### Suit Ratio (Erratic Deck)  
-- **Easy**: 40-50% single suit
-- **Medium**: 50-65% single suit
-- **Hard**: 65-75% single suit
-- **Mathematically Impossible**: 80%+ single suit
-
-To adjust, edit `ImmolateSourceCode/filters/erratic_brainstorm.cl`
-
-## Performance
-
-| Hardware | Expected Speed |
-|----------|---------------|
-| CPU only | 1-5K seeds/sec |
-| Integrated GPU | 10-50K seeds/sec |
-| Gaming GPU | 100K+ seeds/sec |
-
-## How It Works
-
-1. **In-Game (Brainstorm Mod)**:
-   - Hooks into game update loop
-   - Tests seeds by restarting game
-   - ~110 seeds/second maximum
-   - Uses original `Immolate.dll` for voucher/tag filtering
-
-2. **GPU Tool (Enhanced Immolate)**:
-   - Replicates Balatro's exact RNG
-   - Tests 100,000+ seeds/second
-   - Full Erratic deck generation
-   - Accurately handles glitched seeds (e.g., `7LB2WVPK`)
+- **Dual Tag Search** - Find seeds with ANY two tag combination (e.g., double Investment)
+- **Erratic Deck Filters** - Face cards (0-23) and suit ratio (up to 75%)
+- **Smart Performance** - 100-1000 seeds/second with automatic throttling
+- **Save States** - 5 slots for experimentation
 
 ## Development
 
-See [CLAUDE.md](CLAUDE.md) for:
-- Architecture details
-- Code style guide
-- Testing procedures
-- Future roadmap
+### Project Structure
+```
+Brainstorm/
+├── Core/Brainstorm.lua    # Main logic & auto-reroll
+├── UI/ui.lua              # Settings interface
+├── ImmolateCPP/           # C++ DLL source
+│   ├── src/               # Enhanced dual tag implementation
+│   └── build_simple.sh    # MinGW build script
+├── config.lua             # User settings (auto-saved)
+├── deploy.sh              # Installation script
+└── Immolate.dll           # Native acceleration (2.4MB = enhanced)
+```
+
+### Building the DLL
+
+Requires MinGW-w64 (works from WSL2):
+```bash
+cd ImmolateCPP
+./build_simple.sh  # Creates Immolate.dll
+```
+
+### Key Concepts
+
+**Dual Tag Validation** - The enhanced DLL checks both blind positions internally for 10-100x speedup over the original approach of restarting the game for each seed.
+
+**Erratic Deck Limits** - Testing shows 75% suit ratio is maximum achievable, 23 face cards is realistic max (25 theoretically possible but extremely rare).
+
+**Performance Throttling** - Automatically limits seeds per frame based on requirements to maintain 60 FPS.
+
+## Configuration
+
+Settings saved to `config.lua` using Balatro's STR_PACK format:
+
+- `ar_filters` - Tag, voucher, pack requirements
+- `ar_prefs` - Speed, face cards, suit ratio
+- `debug_enabled` - Performance statistics
 
 ## Troubleshooting
 
-### "No OpenCL devices"
-Install GPU drivers:
-- NVIDIA: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
-- AMD: Latest drivers with OpenCL
-- Intel: Intel Graphics Driver
+**"Mod not loading"** - Check Lovely injector is installed  
+**"Searches are slow"** - Ensure you have the 2.4MB enhanced DLL  
+**"Can't find good seeds"** - Double same tags are extremely rare (~0.1% chance)
 
-### "Mod not loading"
-1. Check Lovely injector is installed
-2. Verify files in correct folder
-3. Press F2 in game for console/errors
+## License
 
-### "Can't find good seeds"
-Your criteria may be too strict:
-- Lower requirements
-- Run longer searches
-- Check realistic settings above
-
-## Credits
-
-- **Original Immolate**: SpectralPack team
-- **RNG Analysis**: jimbo_extreme1 (Reddit)
-- **Brainstorm Mod**: Original authors
-- **Enhancements**: This implementation
+MIT
