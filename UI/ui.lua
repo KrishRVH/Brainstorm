@@ -339,6 +339,13 @@ function create_tabs(args)
                   ref_value = "inst_perkeo",
                   callback = write_config,
                 }),
+                create_toggle({
+                  label = "USE GPU/CUDA",
+                  scale = 0.8,
+                  ref_table = Brainstorm.config,
+                  ref_value = "use_cuda",
+                  callback = write_config,
+                }),
                 create_option_cycle({
                   label = "ED: Min. # of Face Cards",
                   scale = 0.8,

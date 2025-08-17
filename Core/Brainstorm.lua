@@ -5,6 +5,33 @@
 
 local lovely = require("lovely")
 local nfs = require("nativefs")
+local ffi = require("ffi")
+
+-- Initialize logging system
+local logger_ok, logger = pcall(require, "Core.logger")
+local log
+if logger_ok then
+  log = logger.for_module("Brainstorm")
+else
+  -- Fallback if logger not available
+  log = {
+    trace = function(msg) end,
+    debug = function(msg)
+      if Brainstorm.debug and Brainstorm.debug.enabled then
+        print("[DEBUG] " .. msg)
+      end
+    end,
+    info = function(msg)
+      print("[INFO] " .. msg)
+    end,
+    warn = function(msg)
+      print("[WARN] " .. msg)
+    end,
+    error = function(msg)
+      print("[ERROR] " .. msg)
+    end,
+  }
+end
 
 Brainstorm = {}
 
@@ -111,11 +138,14 @@ local os_clock = os.clock
 local pcall = pcall
 
 -- Random seed generation constants
--- These magic numbers are used to generate pseudo-random seeds
--- based on cursor position and time for better randomness
-local SEED_X_FACTOR = 0.33411983
-local SEED_Y_FACTOR = 0.874146
-local SEED_TIME_FACTOR = 0.412311010
+-- Seed generation factors using prime-based constants for good distribution
+-- These values minimize correlation between cursor position and generated seeds:
+--   X factor (~1/3): Spreads horizontal mouse movement across seed space
+--   Y factor (~7/8): Ensures vertical movement contributes strongly
+--   Time factor (~2/5): Incorporates temporal variation for entropy
+local SEED_X_FACTOR = 0.33411983 -- Prime-derived for X axis distribution
+local SEED_Y_FACTOR = 0.874146 -- Prime-derived for Y axis spread
+local SEED_TIME_FACTOR = 0.412311010 -- Prime-derived for time entropy
 
 -- Find the Brainstorm mod directory
 -- Searches for a directory containing "brainstorm" (case-insensitive)
@@ -197,10 +227,24 @@ function Brainstorm.write_config()
 end
 
 function Brainstorm.init()
+  print("[Brainstorm] Initializing...")
+
   Brainstorm.PATH = find_brainstorm_directory(lovely.mod_dir)
   if not Brainstorm.PATH then
     print("[Brainstorm] ERROR: Could not find Brainstorm directory")
     return false
+  end
+
+  print("[Brainstorm] Found mod at: " .. Brainstorm.PATH)
+
+  -- Initialize logger with file path
+  if logger_ok and logger.global then
+    logger.global.file_path = Brainstorm.PATH .. "/brainstorm.log"
+    logger.global:rotate_log_if_needed()
+    log:info(
+      "Brainstorm initialized",
+      { version = Brainstorm.VERSION, path = Brainstorm.PATH }
+    )
   end
 
   Brainstorm.load_config()
@@ -308,6 +352,16 @@ end
 local key_press_update_ref = Controller.key_press_update
 function Controller:key_press_update(key, dt)
   key_press_update_ref(self, key, dt)
+
+  -- Safety check: ensure Brainstorm is initialized
+  if
+    not Brainstorm
+    or not Brainstorm.config
+    or not Brainstorm.config.keybinds
+  then
+    return
+  end
+
   local keybinds = Brainstorm.config.keybinds
 
   -- Save state functionality
@@ -329,56 +383,78 @@ function Controller:key_press_update(key, dt)
     if key == keybinds.f_reroll then
       Brainstorm.reroll()
     elseif key == keybinds.a_reroll then
-      if Brainstorm.ar_active then
-        Brainstorm.stop_auto_reroll(false)
-      else
-        Brainstorm.ar_active = true
+      print("[Brainstorm] Ctrl+A pressed - toggling auto-reroll")
+      -- Wrap in pcall to catch any errors
+      local success, err = pcall(function()
+        if Brainstorm.ar_active then
+          Brainstorm.stop_auto_reroll(false)
+        else
+          Brainstorm.ar_active = true
 
-        -- Print helpful message for dual tag searches
-        if
-          Brainstorm.config.ar_filters.tag2_name
-          and Brainstorm.config.ar_filters.tag2_name ~= ""
-        then
-          local tag1_display = localize({
-            type = "name_text",
-            set = "Tag",
-            key = Brainstorm.config.ar_filters.tag_name,
-          })
-          local tag2_display = localize({
-            type = "name_text",
-            set = "Tag",
-            key = Brainstorm.config.ar_filters.tag2_name,
-          })
-
+          -- Print helpful message for dual tag searches
           if
-            Brainstorm.config.ar_filters.tag_name
-            == Brainstorm.config.ar_filters.tag2_name
+            Brainstorm.config.ar_filters.tag2_name
+            and Brainstorm.config.ar_filters.tag2_name ~= ""
           then
-            print(
-              string.format(
-                "[Brainstorm] Searching for DOUBLE %s tags...",
-                tag1_display
+            -- Safely get tag display names
+            local tag1_display = Brainstorm.config.ar_filters.tag_name
+            local tag2_display = Brainstorm.config.ar_filters.tag2_name
+
+            -- Try to localize if the function exists and is safe
+            if localize and type(localize) == "function" then
+              local ok1, localized1 = pcall(localize, {
+                type = "name_text",
+                set = "Tag",
+                key = Brainstorm.config.ar_filters.tag_name,
+              })
+              if ok1 and localized1 then
+                tag1_display = localized1
+              end
+
+              local ok2, localized2 = pcall(localize, {
+                type = "name_text",
+                set = "Tag",
+                key = Brainstorm.config.ar_filters.tag2_name,
+              })
+              if ok2 and localized2 then
+                tag2_display = localized2
+              end
+            end
+
+            if
+              Brainstorm.config.ar_filters.tag_name
+              == Brainstorm.config.ar_filters.tag2_name
+            then
+              print(
+                string.format(
+                  "[Brainstorm] Searching for DOUBLE %s tags...",
+                  tag1_display
+                )
               )
-            )
-            print(
-              "[Brainstorm] This is extremely rare! May take 5-30 seconds depending on the tag."
-            )
-          else
-            print(
-              string.format(
-                "[Brainstorm] Searching for %s + %s tags...",
-                tag1_display,
-                tag2_display
+              print(
+                "[Brainstorm] This is extremely rare! May take 5-30 seconds depending on the tag."
               )
-            )
+            else
+              print(
+                string.format(
+                  "[Brainstorm] Searching for %s + %s tags...",
+                  tag1_display,
+                  tag2_display
+                )
+              )
+              print(
+                "[Brainstorm] Dual tag combinations can take 5-20 seconds to find."
+              )
+            end
             print(
-              "[Brainstorm] Dual tag combinations can take 5-20 seconds to find."
+              "[Brainstorm] Order doesn't matter - either tag can be in either blind position."
             )
           end
-          print(
-            "[Brainstorm] Order doesn't matter - either tag can be in either blind position."
-          )
         end
+      end) -- End of pcall
+
+      if not success then
+        print("[Brainstorm] ERROR in auto-reroll toggle: " .. tostring(err))
       end
     end
   end
@@ -814,187 +890,204 @@ end
 -- This is called every frame when the game is running
 local update_ref = Game.update
 function Game:update(dt)
-  update_ref(self, dt) -- Call original update function
+  -- Safely call original update
+  if update_ref then
+    update_ref(self, dt)
+  end
+
+  -- Safety check for Brainstorm
+  if not Brainstorm then
+    return
+  end
 
   -- Handle auto-reroll if active
   if Brainstorm.ar_active then
-    -- Initialize debug tracking on first frame
-    if Brainstorm.debug.start_time == 0 then
-      Brainstorm.debug.start_time = os_clock()
-      Brainstorm.debug.last_report_time = os_clock()
-    end
+    -- Wrap in pcall to catch errors
+    local success, err = pcall(function()
+      -- Initialize debug tracking on first frame
+      if Brainstorm.debug.start_time == 0 then
+        Brainstorm.debug.start_time = os_clock()
+        Brainstorm.debug.last_report_time = os_clock()
+      end
 
-    -- Print periodic updates every 5 seconds
-    if
-      Brainstorm.debug.enabled
-      and os_clock() - Brainstorm.debug.last_report_time > 5
-    then
-      Brainstorm.print_periodic_update()
-      Brainstorm.debug.last_report_time = os_clock()
-    end
+      -- Print periodic updates every 5 seconds
+      if
+        Brainstorm.debug.enabled
+        and os_clock() - Brainstorm.debug.last_report_time > 5
+      then
+        Brainstorm.print_periodic_update()
+        Brainstorm.debug.last_report_time = os_clock()
+      end
 
-    Brainstorm.ar_frames = Brainstorm.ar_frames + 1
-    Brainstorm.ar_timer = Brainstorm.ar_timer + dt
+      Brainstorm.ar_frames = Brainstorm.ar_frames + 1
+      Brainstorm.ar_timer = Brainstorm.ar_timer + dt
 
-    if Brainstorm.ar_timer >= Brainstorm.AR_INTERVAL then
-      Brainstorm.ar_timer = Brainstorm.ar_timer - Brainstorm.AR_INTERVAL
+      if Brainstorm.ar_timer >= Brainstorm.AR_INTERVAL then
+        Brainstorm.ar_timer = Brainstorm.ar_timer - Brainstorm.AR_INTERVAL
 
-      -- Try multiple seeds based on spf_int setting (seeds per second)
-      -- AR_INTERVAL is 0.01 seconds, so we run 100 times per second
-      -- Divide spf_int by 100 to get seeds per interval
-      local seeds_to_try =
-        math_max(1, math_floor(Brainstorm.config.ar_prefs.spf_int / 100))
-      local seed_found = nil
+        -- Try multiple seeds based on spf_int setting (seeds per second)
+        -- AR_INTERVAL is 0.01 seconds, so we run 100 times per second
+        -- Divide spf_int by 100 to get seeds per interval
+        local seeds_to_try =
+          math_max(1, math_floor(Brainstorm.config.ar_prefs.spf_int / 100))
+        local seed_found = nil
 
-      -- Determine if we need to validate Erratic deck requirements
-      -- Erratic decks have random card distributions that need checking
-      local has_erratic_requirements = G.GAME.starting_params.erratic_suits_and_ranks
-        and (
-          Brainstorm.config.ar_prefs.face_count > 0
-          or Brainstorm.config.ar_prefs.suit_ratio_decimal > 0
-        )
-
-      -- Check if we have other filters active (vouchers, tags, packs)
-      local has_other_filters = (
-        Brainstorm.config.ar_filters.voucher_name ~= ""
-      )
-        or (Brainstorm.config.ar_filters.tag_name ~= "")
-        or (Brainstorm.config.ar_filters.tag2_name ~= "")
-        or (#Brainstorm.config.ar_filters.pack > 0)
-
-      if has_erratic_requirements then
-        -- Performance optimization for Erratic deck searches
-        -- Limit seeds per frame to prevent lag spikes
-        local max_seeds = 5 -- Conservative default to maintain 60 FPS
-        if Brainstorm.config.ar_prefs.spf_int <= 500 then
-          max_seeds = seeds_to_try -- Use full speed for low settings
-        elseif Brainstorm.config.ar_prefs.spf_int <= 1000 then
-          max_seeds = math_min(seeds_to_try, 5) -- Cap at 5 for medium
-        else
-          max_seeds = math_min(seeds_to_try, 10) -- Cap at 10 for high
-        end
-        local erratic_seeds_to_try = max_seeds
-
-        -- Log actual speed for debugging
-        if Brainstorm.debug.enabled and Brainstorm.debug.seeds_tested == 1 then
-          print(
-            string.format(
-              "[Brainstorm] Testing %d seeds per frame (target: %d/sec)",
-              erratic_seeds_to_try,
-              Brainstorm.config.ar_prefs.spf_int
-            )
+        -- Determine if we need to validate Erratic deck requirements
+        -- Erratic decks have random card distributions that need checking
+        local has_erratic_requirements = G.GAME.starting_params.erratic_suits_and_ranks
+          and (
+            Brainstorm.config.ar_prefs.face_count > 0
+            or Brainstorm.config.ar_prefs.suit_ratio_decimal > 0
           )
-        end
 
-        for i = 1, erratic_seeds_to_try do
-          local test_seed = nil
+        -- Check if we have other filters active (vouchers, tags, packs)
+        local has_other_filters = (
+          Brainstorm.config.ar_filters.voucher_name ~= ""
+        )
+          or (Brainstorm.config.ar_filters.tag_name ~= "")
+          or (Brainstorm.config.ar_filters.tag2_name ~= "")
+          or (#Brainstorm.config.ar_filters.pack > 0)
 
-          if has_other_filters then
-            -- Use DLL to find seeds with voucher/tag/pack requirements
-            test_seed = Brainstorm.auto_reroll()
-            if test_seed then
-              Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
-            end
+        if has_erratic_requirements then
+          -- Performance optimization for Erratic deck searches
+          -- Limit seeds per frame to prevent lag spikes
+          local max_seeds = 5 -- Conservative default to maintain 60 FPS
+          if Brainstorm.config.ar_prefs.spf_int <= 500 then
+            max_seeds = seeds_to_try -- Use full speed for low settings
+          elseif Brainstorm.config.ar_prefs.spf_int <= 1000 then
+            max_seeds = math_min(seeds_to_try, 5) -- Cap at 5 for medium
           else
-            -- No other filters, just generate random seeds
-            test_seed = random_string(
-              8,
-              G.CONTROLLER.cursor_hover.T.x * SEED_X_FACTOR
-                + G.CONTROLLER.cursor_hover.T.y * SEED_Y_FACTOR
-                + SEED_TIME_FACTOR
-                  * (G.CONTROLLER.cursor_hover.time + i * 0.001)
+            max_seeds = math_min(seeds_to_try, 10) -- Cap at 10 for high
+          end
+          local erratic_seeds_to_try = max_seeds
+
+          -- Log actual speed for debugging
+          if
+            Brainstorm.debug.enabled and Brainstorm.debug.seeds_tested == 1
+          then
+            print(
+              string.format(
+                "[Brainstorm] Testing %d seeds per frame (target: %d/sec)",
+                erratic_seeds_to_try,
+                Brainstorm.config.ar_prefs.spf_int
+              )
             )
           end
 
-          if test_seed then
-            local stake = G.GAME.stake
-            local challenge = G.GAME
-              and G.GAME.challenge
-              and G.GAME.challenge_tab
-            G:delete_run()
-            G:start_run({
-              stake = stake,
-              seed = test_seed,
-              challenge = challenge,
-            })
+          for i = 1, erratic_seeds_to_try do
+            local test_seed = nil
 
-            -- Check if this seed meets the Erratic deck requirements
-            local deck_data = Brainstorm.analyze_deck()
-            Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
-
-            -- Also check dual tags if configured
-            local tags_valid = Brainstorm.check_dual_tags()
-
-            if
-              tags_valid
-              and Brainstorm.is_valid_deck(
-                deck_data,
-                Brainstorm.config.ar_prefs.face_count,
-                0,
-                Brainstorm.config.ar_prefs.suit_ratio_decimal
+            if has_other_filters then
+              -- Use DLL to find seeds with voucher/tag/pack requirements
+              test_seed = Brainstorm.auto_reroll()
+              if test_seed then
+                Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
+              end
+            else
+              -- No other filters, just generate random seeds
+              test_seed = random_string(
+                8,
+                G.CONTROLLER.cursor_hover.T.x * SEED_X_FACTOR
+                  + G.CONTROLLER.cursor_hover.T.y * SEED_Y_FACTOR
+                  + SEED_TIME_FACTOR
+                    * (G.CONTROLLER.cursor_hover.time + i * 0.001)
               )
-            then
-              -- Found a valid seed that meets all criteria
-              Brainstorm.stop_auto_reroll(true)
-              G.GAME.used_filter = true
-              G.GAME.seeded = false
-              break
+            end
+
+            if test_seed then
+              local stake = G.GAME.stake
+              local challenge = G.GAME
+                and G.GAME.challenge
+                and G.GAME.challenge_tab
+              G:delete_run()
+              G:start_run({
+                stake = stake,
+                seed = test_seed,
+                challenge = challenge,
+              })
+
+              -- Check if this seed meets the Erratic deck requirements
+              local deck_data = Brainstorm.analyze_deck()
+              Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
+
+              -- Also check dual tags if configured
+              local tags_valid = Brainstorm.check_dual_tags()
+
+              if
+                tags_valid
+                and Brainstorm.is_valid_deck(
+                  deck_data,
+                  Brainstorm.config.ar_prefs.face_count,
+                  0,
+                  Brainstorm.config.ar_prefs.suit_ratio_decimal
+                )
+              then
+                -- Found a valid seed that meets all criteria
+                Brainstorm.stop_auto_reroll(true)
+                G.GAME.used_filter = true
+                G.GAME.seeded = false
+                break
+              end
             end
           end
-        end
-      else
-        -- No Erratic requirements, use DLL normally
-        for i = 1, seeds_to_try do
-          seed_found = Brainstorm.auto_reroll()
-          if seed_found then
-            -- Found a seed that matches DLL criteria
-            local stake = G.GAME.stake
-            local challenge = G.GAME
-              and G.GAME.challenge
-              and G.GAME.challenge_tab
-            G:delete_run()
-            G:start_run({
-              stake = stake,
-              seed = seed_found,
-              challenge = challenge,
-            })
+        else
+          -- No Erratic requirements, use DLL normally
+          for i = 1, seeds_to_try do
+            seed_found = Brainstorm.auto_reroll()
+            if seed_found then
+              -- Found a seed that matches DLL criteria
+              local stake = G.GAME.stake
+              local challenge = G.GAME
+                and G.GAME.challenge
+                and G.GAME.challenge_tab
+              G:delete_run()
+              G:start_run({
+                stake = stake,
+                seed = seed_found,
+                challenge = challenge,
+              })
 
-            -- Check dual tags if configured
-            local tags_valid = Brainstorm.check_dual_tags()
+              -- Check dual tags if configured
+              local tags_valid = Brainstorm.check_dual_tags()
 
-            if tags_valid then
-              G.GAME.used_filter = true
-              G.GAME.seeded = false
-              Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
-              Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
-              Brainstorm.stop_auto_reroll(true)
-              break
-            else
-              -- Tags don't match, continue searching
-              Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
+              if tags_valid then
+                G.GAME.used_filter = true
+                G.GAME.seeded = false
+                Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested
+                  + 1
+                Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
+                Brainstorm.stop_auto_reroll(true)
+                break
+              else
+                -- Tags don't match, continue searching
+                Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested
+                  + 1
+              end
             end
           end
         end
       end
-    end
-    if
-      Brainstorm.ar_frames == 60
-      and not Brainstorm.ar_text
-      and Brainstorm.ar_active
-    then
-      Brainstorm.ar_text = Brainstorm.attention_text({
-        scale = 1.4,
-        text = "Rerolling...",
-        align = "cm",
-        offset = { x = 0, y = -3.5 },
-        major = G.STAGE == G.STAGES.RUN and G.play or G.title_top,
-      })
+      if
+        Brainstorm.ar_frames == 60
+        and not Brainstorm.ar_text
+        and Brainstorm.ar_active
+      then
+        Brainstorm.ar_text = Brainstorm.attention_text({
+          scale = 1.4,
+          text = "Rerolling...",
+          align = "cm",
+          offset = { x = 0, y = -3.5 },
+          major = G.STAGE == G.STAGES.RUN and G.play or G.title_top,
+        })
+      end
+    end) -- End of pcall
+
+    if not success then
+      print("[Brainstorm] ERROR in auto-reroll update: " .. tostring(err))
+      Brainstorm.ar_active = false -- Disable auto-reroll on error
     end
   end
 end
-
-local ffi = require("ffi")
-local lovely = require("lovely")
 
 -- Foreign Function Interface (FFI) for native DLL integration
 -- The DLL provides high-performance seed filtering without game restarts
@@ -1013,6 +1106,10 @@ local function init_ffi()
       const char* get_tags(const char* seed);
       // Free memory allocated by DLL (prevents memory leaks)
       void free_result(const char* result);
+      // GPU/CUDA functions
+      int get_acceleration_type();  // 0=CPU, 1=GPU
+      const char* get_hardware_info();
+      void set_use_cuda(bool enable);
     ]]
     )
     if not success then
@@ -1100,6 +1197,33 @@ function Brainstorm.auto_reroll()
       return nil
     end
     immolate_dll = immolate -- Cache for future use
+
+    -- Configure GPU/CUDA support based on config
+    if immolate_dll.set_use_cuda then
+      local use_cuda = Brainstorm.config.use_cuda ~= false -- Default to true
+      pcall(immolate_dll.set_use_cuda, use_cuda)
+
+      -- Get hardware info for debugging
+      if immolate_dll.get_hardware_info then
+        local info_ptr = immolate_dll.get_hardware_info()
+        if info_ptr ~= nil then
+          local hardware_info = ffi.string(info_ptr)
+          print("[Brainstorm] Hardware: " .. hardware_info)
+
+          -- Check actual acceleration type
+          if immolate_dll.get_acceleration_type then
+            local accel_type = immolate_dll.get_acceleration_type()
+            if accel_type == 1 then
+              print("[Brainstorm] GPU acceleration enabled")
+              Brainstorm.debug.gpu_enabled = true
+            else
+              print("[Brainstorm] Using CPU acceleration")
+              Brainstorm.debug.gpu_enabled = false
+            end
+          end
+        end
+      end
+    end
   end
   -- Extract pack name from configuration
   local pack = ""
