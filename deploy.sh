@@ -16,17 +16,13 @@ echo -e "${YELLOW}Deploying Brainstorm mod...${NC}"
 # Create target directory if it doesn't exist
 mkdir -p "$TARGET"
 
-# Check for DLL and use the new one if available
-DLL_TO_DEPLOY="Immolate.dll"
-if [ -f "Immolate_new.dll" ]; then
-    echo -e "${GREEN}Found enhanced DLL (Immolate_new.dll), using it${NC}"
-    # Backup original if it exists
-    if [ -f "$TARGET/Immolate.dll" ] && [ ! -f "$TARGET/Immolate_original.dll" ]; then
-        cp "$TARGET/Immolate.dll" "$TARGET/Immolate_original.dll"
-        echo -e "${YELLOW}Backed up original DLL to Immolate_original.dll${NC}"
-    fi
-    cp "Immolate_new.dll" "$TARGET/Immolate.dll"
-    echo -e "${GREEN}✓${NC} Deployed enhanced DLL as Immolate.dll"
+# Deploy the enhanced DLL (now the only version)
+if [ -f "Immolate.dll" ]; then
+    cp "Immolate.dll" "$TARGET/Immolate.dll"
+    echo -e "${GREEN}✓${NC} Deployed enhanced DLL"
+else
+    echo -e "${YELLOW}⚠${NC} Warning: Immolate.dll not found"
+    echo "Build it with: cd ImmolateCPP && ./build_simple.sh"
 fi
 
 # Files to deploy
@@ -56,11 +52,6 @@ for file in "${FILES[@]}"; do
     fi
 done
 
-# Handle DLL separately if not using enhanced version
-if [ ! -f "Immolate_new.dll" ] && [ -f "Immolate.dll" ]; then
-    cp "Immolate.dll" "$TARGET/Immolate.dll"
-    echo -e "${GREEN}✓${NC} Deployed: Immolate.dll (original)"
-fi
 
 echo -e "${GREEN}Deployment complete!${NC}"
 echo "Mod installed at: C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm"

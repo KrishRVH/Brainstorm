@@ -20,8 +20,10 @@ return {
   ["ar_filters"] = {
     ["inst_perkeo"] = false,
     ["tag_name"] = "tag_skip",
+    ["tag2_name"] = "",
     ["soul_skip"] = 0,
     ["tag_id"] = 15,
+    ["tag2_id"] = 1,
     ["inst_observatory"] = false,
     ["voucher_name"] = "",
     ["voucher_id"] = 1,

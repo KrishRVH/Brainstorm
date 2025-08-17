@@ -1,10 +1,15 @@
+-- Brainstorm Mod for Balatro
+-- High-performance seed filtering and save state management
+-- Author: Community Edition v3.0
+-- License: MIT
+
 local lovely = require("lovely")
 local nfs = require("nativefs")
 
 Brainstorm = {}
 
 -- Mod version
-Brainstorm.VERSION = "Brainstorm v2.2.0-alpha"
+Brainstorm.VERSION = "Brainstorm v3.0.0"
 
 -- Reserved for Steammodded compatibility
 Brainstorm.SMODS = nil
@@ -44,44 +49,76 @@ Brainstorm.config = {
   debug_enabled = true,
 }
 
--- Auto-reroll state
-Brainstorm.ar_timer = 0
-Brainstorm.ar_frames = 0
-Brainstorm.ar_text = nil
-Brainstorm.ar_active = false
+-- Auto-reroll state management
+-- Tracks the state of automatic seed rerolling
+Brainstorm.ar_timer = 0 -- Time accumulator for reroll intervals
+Brainstorm.ar_frames = 0 -- Frame counter for UI display timing
+Brainstorm.ar_text = nil -- UI text element for "Rerolling..." message
+Brainstorm.ar_active = false -- Whether auto-reroll is currently active
 
--- Debug statistics
+-- Debug statistics for performance monitoring and analysis
+-- Helps users understand search difficulty and optimize filters
 Brainstorm.debug = {
   enabled = false, -- Will be set from config
-  seeds_tested = 0,
-  seeds_found = 0,
-  start_time = 0,
-  rejection_reasons = {
-    face_cards = 0,
-    suit_ratio = 0,
-    dll_filter = 0,
+  seeds_tested = 0, -- Total seeds evaluated
+  seeds_found = 0, -- Seeds matching DLL filters
+  start_time = 0, -- When search started (os.clock)
+  rejection_reasons = { -- Why seeds were rejected
+    face_cards = 0, -- Not enough face cards
+    suit_ratio = 0, -- Suit distribution too even
+    dll_filter = 0, -- Failed DLL criteria
   },
-  distributions = {
-    face_cards = {},
-    suit_ratios = {},
+  distributions = { -- Statistical distributions found
+    face_cards = {}, -- Histogram of face card counts
+    suit_ratios = {}, -- Histogram of suit ratios
   },
-  last_report_time = 0,
-  highest_suit_ratio = 0,
-  highest_face_count = 0,
+  last_report_time = 0, -- Last time we printed progress
+  highest_suit_ratio = 0, -- Best ratio seen so far
+  highest_face_count = 0, -- Most face cards seen
+}
+
+-- Static lookup tables for better performance
+-- Avoids repeated string comparisons in hot loops
+Brainstorm.RATIO_MAP = {
+  ["Disabled"] = 0,
+  ["50%"] = 0.5,
+  ["60%"] = 0.6,
+  ["70%"] = 0.7,
+  ["75%"] = 0.75,
+  ["80%"] = 0.80, -- 80% is mathematically impossible but kept for compatibility
+}
+
+-- Face card lookup for O(1) checking instead of multiple string comparisons
+Brainstorm.FACE_CARDS = {
+  ["Jack"] = true,
+  ["Queen"] = true,
+  ["King"] = true,
 }
 
 -- Constants
-Brainstorm.AR_INTERVAL = 0.01 -- Seconds between reroll attempts
+Brainstorm.AR_INTERVAL = 0.01 -- Seconds between reroll attempts (100 Hz)
 
--- Cache frequently used functions for performance
+-- Performance optimization: Cache frequently used functions
+-- This avoids table lookups in hot code paths
 local string_format = string.format
 local string_lower = string.lower
+local math_floor = math.floor
+local math_max = math.max
+local math_min = math.min
+local table_insert = table.insert
+local table_sort = table.sort
+local os_clock = os.clock
+local pcall = pcall
 
 -- Random seed generation constants
+-- These magic numbers are used to generate pseudo-random seeds
+-- based on cursor position and time for better randomness
 local SEED_X_FACTOR = 0.33411983
 local SEED_Y_FACTOR = 0.874146
 local SEED_TIME_FACTOR = 0.412311010
 
+-- Find the Brainstorm mod directory
+-- Searches for a directory containing "brainstorm" (case-insensitive)
 local function find_brainstorm_directory(directory)
   for _, item in ipairs(nfs.getDirectoryItems(directory)) do
     local itemPath = directory .. "/" .. item
@@ -99,10 +136,12 @@ local function file_exists(file_path)
   return nfs.getInfo(file_path) ~= nil
 end
 
+-- Load configuration from file with backward compatibility
+-- Uses deep merge to preserve new fields when loading old configs
 function Brainstorm.load_config()
   local config_path = Brainstorm.PATH .. "/config.lua"
   if not file_exists(config_path) then
-    Brainstorm.write_config()
+    Brainstorm.write_config() -- Create default config
   else
     local config_file, err = nfs.read(config_path)
     if not config_file then
@@ -115,12 +154,13 @@ function Brainstorm.load_config()
     local success, loaded_config = pcall(STR_UNPACK, config_file)
     if success and loaded_config then
       -- Deep merge loaded config with defaults to handle new fields
+      -- This ensures backward compatibility when new config options are added
       local function deep_merge(target, source)
         for key, value in pairs(source) do
           if type(value) == "table" and type(target[key]) == "table" then
-            deep_merge(target[key], value)
+            deep_merge(target[key], value) -- Recursively merge nested tables
           else
-            target[key] = value
+            target[key] = value -- Overwrite or add new value
           end
         end
       end
@@ -135,16 +175,8 @@ function Brainstorm.load_config()
       Brainstorm.config.ar_prefs.suit_ratio_percent = Brainstorm.config.ar_prefs.suit_ratio_percent
         or "Disabled"
 
-      -- Map suit ratio percentage to decimal value
-      local ratio_map = {
-        ["Disabled"] = 0,
-        ["50%"] = 0.5,
-        ["60%"] = 0.6,
-        ["70%"] = 0.7,
-        ["75%"] = 0.75,
-        ["80%"] = 0.80,
-      }
-      Brainstorm.config.ar_prefs.suit_ratio_decimal = ratio_map[Brainstorm.config.ar_prefs.suit_ratio_percent]
+      -- Map suit ratio percentage to decimal value (use static table)
+      Brainstorm.config.ar_prefs.suit_ratio_decimal = Brainstorm.RATIO_MAP[Brainstorm.config.ar_prefs.suit_ratio_percent]
         or 0
     end
   end
@@ -166,9 +198,35 @@ end
 
 function Brainstorm.init()
   Brainstorm.PATH = find_brainstorm_directory(lovely.mod_dir)
+  if not Brainstorm.PATH then
+    print("[Brainstorm] ERROR: Could not find Brainstorm directory")
+    return false
+  end
+
   Brainstorm.load_config()
   Brainstorm.debug.enabled = Brainstorm.config.debug_enabled or false
-  assert(load(nfs.read(Brainstorm.PATH .. "/UI/ui.lua")))()
+
+  -- Load UI with error handling
+  local ui_path = Brainstorm.PATH .. "/UI/ui.lua"
+  local ui_content = nfs.read(ui_path)
+  if not ui_content then
+    print("[Brainstorm] ERROR: Could not read UI file")
+    return false
+  end
+
+  local ui_func, err = load(ui_content)
+  if not ui_func then
+    print("[Brainstorm] ERROR: Failed to load UI: " .. tostring(err))
+    return false
+  end
+
+  local success, ui_err = pcall(ui_func)
+  if not success then
+    print("[Brainstorm] ERROR: Failed to initialize UI: " .. tostring(ui_err))
+    return false
+  end
+
+  return true
 end
 
 -- Save state functionality
@@ -211,23 +269,36 @@ function Brainstorm.save_game_state(slot)
       .. "save_state_"
       .. slot
       .. ".jkr"
-    compress_and_save(save_path, G.ARGS.save_run)
-    Brainstorm.save_state_alert("Saved state to slot [" .. slot .. "]")
-    return true
+    local success, err = pcall(compress_and_save, save_path, G.ARGS.save_run)
+    if success then
+      Brainstorm.save_state_alert("Saved state to slot [" .. slot .. "]")
+      return true
+    else
+      print("[Brainstorm] Failed to save state: " .. tostring(err))
+      Brainstorm.save_state_alert("Failed to save state")
+      return false
+    end
   end
   return false
 end
 
 function Brainstorm.load_game_state(slot)
   local save_path = G.SETTINGS.profile .. "/" .. "save_state_" .. slot .. ".jkr"
-  local saved_game = get_compressed(save_path)
+  local success, saved_game = pcall(get_compressed, save_path)
 
-  if saved_game then
-    G:delete_run()
-    G.SAVED_GAME = STR_UNPACK(saved_game)
-    G:start_run({ savetext = G.SAVED_GAME })
-    Brainstorm.save_state_alert("Loaded state from slot [" .. slot .. "]")
-    return true
+  if success and saved_game then
+    local unpack_success, saved_data = pcall(STR_UNPACK, saved_game)
+    if unpack_success and saved_data then
+      G:delete_run()
+      G.SAVED_GAME = saved_data
+      G:start_run({ savetext = G.SAVED_GAME })
+      Brainstorm.save_state_alert("Loaded state from slot [" .. slot .. "]")
+      return true
+    else
+      print("[Brainstorm] Failed to unpack save: " .. tostring(saved_data))
+      Brainstorm.save_state_alert("Corrupted save in slot [" .. slot .. "]")
+      return false
+    end
   else
     Brainstorm.save_state_alert("No save in slot [" .. slot .. "]")
     return false
@@ -262,91 +333,166 @@ function Controller:key_press_update(key, dt)
         Brainstorm.stop_auto_reroll(false)
       else
         Brainstorm.ar_active = true
-        
+
         -- Print helpful message for dual tag searches
-        if Brainstorm.config.ar_filters.tag2_name and Brainstorm.config.ar_filters.tag2_name ~= "" then
-          local tag1_display = localize({type = "name_text", set = "Tag", key = Brainstorm.config.ar_filters.tag_name})
-          local tag2_display = localize({type = "name_text", set = "Tag", key = Brainstorm.config.ar_filters.tag2_name})
-          
-          if Brainstorm.config.ar_filters.tag_name == Brainstorm.config.ar_filters.tag2_name then
-            print(string.format("[Brainstorm] Searching for DOUBLE %s tags...", tag1_display))
-            print("[Brainstorm] This is extremely rare! May take 5-30 seconds depending on the tag.")
+        if
+          Brainstorm.config.ar_filters.tag2_name
+          and Brainstorm.config.ar_filters.tag2_name ~= ""
+        then
+          local tag1_display = localize({
+            type = "name_text",
+            set = "Tag",
+            key = Brainstorm.config.ar_filters.tag_name,
+          })
+          local tag2_display = localize({
+            type = "name_text",
+            set = "Tag",
+            key = Brainstorm.config.ar_filters.tag2_name,
+          })
+
+          if
+            Brainstorm.config.ar_filters.tag_name
+            == Brainstorm.config.ar_filters.tag2_name
+          then
+            print(
+              string.format(
+                "[Brainstorm] Searching for DOUBLE %s tags...",
+                tag1_display
+              )
+            )
+            print(
+              "[Brainstorm] This is extremely rare! May take 5-30 seconds depending on the tag."
+            )
           else
-            print(string.format("[Brainstorm] Searching for %s + %s tags...", tag1_display, tag2_display))
-            print("[Brainstorm] Dual tag combinations can take 5-20 seconds to find.")
+            print(
+              string.format(
+                "[Brainstorm] Searching for %s + %s tags...",
+                tag1_display,
+                tag2_display
+              )
+            )
+            print(
+              "[Brainstorm] Dual tag combinations can take 5-20 seconds to find."
+            )
           end
-          print("[Brainstorm] Order doesn't matter - either tag can be in either blind position.")
+          print(
+            "[Brainstorm] Order doesn't matter - either tag can be in either blind position."
+          )
         end
       end
     end
   end
 end
 
+-- Check if the current seed has both required tags in the first ante
+-- Supports order-agnostic matching and same-tag-twice requirements
+-- Returns: true if tags match requirements, false otherwise
 function Brainstorm.check_dual_tags()
-  -- Check if both specified tags are present in the starting blind options
   local tag1 = Brainstorm.config.ar_filters.tag_name
   local tag2 = Brainstorm.config.ar_filters.tag2_name
 
+  -- If no second tag specified, always pass
   if not tag2 or tag2 == "" then
-    return true -- No second tag to check
+    return true
   end
 
   -- Tags are stored in G.GAME.round_resets.blind_tags.Small and .Big
-  if not G.GAME or not G.GAME.round_resets or not G.GAME.round_resets.blind_tags then
+  if
+    not G.GAME
+    or not G.GAME.round_resets
+    or not G.GAME.round_resets.blind_tags
+  then
     return false
   end
 
   local small_blind_tag = G.GAME.round_resets.blind_tags.Small
   local big_blind_tag = G.GAME.round_resets.blind_tags.Big
 
-  -- Only log every 10th check to reduce spam
-  if Brainstorm.debug.enabled and (Brainstorm.debug.dual_tag_checks or 0) % 10 == 0 then
-    print(string.format("[Brainstorm] Checking tags - Small: %s, Big: %s (looking for %s + %s)", 
-      tostring(small_blind_tag), tostring(big_blind_tag), tag1, tag2))
+  -- Only log every 100th check to reduce spam and improve performance
+  if
+    Brainstorm.debug.enabled
+    and (Brainstorm.debug.dual_tag_checks or 0) % 100 == 0
+  then
+    print(
+      string_format(
+        "[Brainstorm] Checking tags - Small: %s, Big: %s (looking for %s + %s)",
+        tostring(small_blind_tag),
+        tostring(big_blind_tag),
+        tag1,
+        tag2
+      )
+    )
   end
 
   -- Track dual tag checks
   if Brainstorm.debug.enabled then
-    Brainstorm.debug.dual_tag_checks = (Brainstorm.debug.dual_tag_checks or 0) + 1
+    Brainstorm.debug.dual_tag_checks = (Brainstorm.debug.dual_tag_checks or 0)
+      + 1
   end
 
-  -- Special case: if looking for the same tag twice, need BOTH positions to have it
+  -- Special case: Looking for the same tag in BOTH blind positions
+  -- Example: Double Investment Tags (extremely rare ~0.1% chance)
   if tag1 == tag2 then
     local both_match = (small_blind_tag == tag1 and big_blind_tag == tag1)
     if both_match then
       print("[Brainstorm] SUCCESS! Both blinds have " .. tag1)
       if Brainstorm.debug.enabled then
-        Brainstorm.debug.dual_tag_successes = (Brainstorm.debug.dual_tag_successes or 0) + 1
+        Brainstorm.debug.dual_tag_successes = (
+          Brainstorm.debug.dual_tag_successes or 0
+        ) + 1
       end
       return true
     else
-      if Brainstorm.debug.enabled and Brainstorm.debug.dual_tag_checks % 100 == 0 then
-        print(string.format("[Brainstorm] Progress: %d seeds checked for dual %s tags", 
-          Brainstorm.debug.dual_tag_checks, tag1))
+      if
+        Brainstorm.debug.enabled
+        and Brainstorm.debug.dual_tag_checks % 100 == 0
+      then
+        print(
+          string.format(
+            "[Brainstorm] Progress: %d seeds checked for dual %s tags",
+            Brainstorm.debug.dual_tag_checks,
+            tag1
+          )
+        )
       end
       return false
     end
   else
-    -- Different tags: check if both are present (order doesn't matter)
+    -- Different tags: Check both are present in either order
+    -- Example: Investment + Charm (order doesn't matter)
     local has_tag1 = (small_blind_tag == tag1 or big_blind_tag == tag1)
     local has_tag2 = (small_blind_tag == tag2 or big_blind_tag == tag2)
 
     if has_tag1 and has_tag2 then
       print("[Brainstorm] SUCCESS! Both tags found (order-agnostic)")
       if Brainstorm.debug.enabled then
-        Brainstorm.debug.dual_tag_successes = (Brainstorm.debug.dual_tag_successes or 0) + 1
+        Brainstorm.debug.dual_tag_successes = (
+          Brainstorm.debug.dual_tag_successes or 0
+        ) + 1
       end
       return true
     else
-      if Brainstorm.debug.enabled and Brainstorm.debug.dual_tag_checks % 100 == 0 then
-        print(string.format("[Brainstorm] Progress: %d seeds checked for %s + %s", 
-          Brainstorm.debug.dual_tag_checks, tag1, tag2))
+      if
+        Brainstorm.debug.enabled
+        and Brainstorm.debug.dual_tag_checks % 100 == 0
+      then
+        print(
+          string.format(
+            "[Brainstorm] Progress: %d seeds checked for %s + %s",
+            Brainstorm.debug.dual_tag_checks,
+            tag1,
+            tag2
+          )
+        )
       end
       return false
     end
   end
 end
 
+-- Analyze the current deck composition
+-- Used for Erratic deck validation (face cards and suit ratios)
+-- Returns: Table with deck statistics
 function Brainstorm.analyze_deck()
   local deck_summary = {}
   local suit_count = { Hearts = 0, Diamonds = 0, Clubs = 0, Spades = 0 }
@@ -354,21 +500,21 @@ function Brainstorm.analyze_deck()
   local numeric_card_count = 0
   local ace_count = 0
   local unique_card_count = 0
+  local face_cards = Brainstorm.FACE_CARDS -- Cache lookup table
 
+  -- Iterate through all cards in the deck
   for _, card in ipairs(G.playing_cards) do
     if card.base then
-      local card_name = card.base.value .. " of " .. card.base.suit
+      local card_value = card.base.value
+      local card_suit = card.base.suit
+      local card_name = card_value .. " of " .. card_suit
       deck_summary[card_name] = (deck_summary[card_name] or 0) + 1
-      suit_count[card.base.suit] = (suit_count[card.base.suit] or 0) + 1
+      suit_count[card_suit] = (suit_count[card_suit] or 0) + 1
 
-      -- Categorizing cards
-      if card.base.value == "Ace" then
+      -- Categorizing cards (optimized with lookup table)
+      if card_value == "Ace" then
         ace_count = ace_count + 1
-      elseif
-        card.base.value == "Jack"
-        or card.base.value == "Queen"
-        or card.base.value == "King"
-      then
+      elseif face_cards[card_value] then
         face_card_count = face_card_count + 1
       else
         numeric_card_count = numeric_card_count + 1
@@ -392,6 +538,14 @@ function Brainstorm.analyze_deck()
   }
 end
 
+-- Validate if a deck meets the specified requirements
+-- Used for Erratic deck filtering based on face cards and suit distribution
+-- Parameters:
+--   deck_data: Analysis from analyze_deck()
+--   min_face_cards: Minimum number of face cards required (0-23)
+--   min_aces: Minimum number of aces required (unused currently)
+--   dominant_suit_ratio: Required ratio for top 2 suits (0.5 to 0.75)
+-- Returns: true if deck is valid, false otherwise
 function Brainstorm.is_valid_deck(
   deck_data,
   min_face_cards,
@@ -411,7 +565,7 @@ function Brainstorm.is_valid_deck(
 
   -- Track distribution for debugging
   if Brainstorm.debug.enabled then
-    local fc_bucket = math.floor(face_card_count / 5) * 5
+    local fc_bucket = math_floor(face_card_count / 5) * 5
     Brainstorm.debug.distributions.face_cards[fc_bucket] = (
       Brainstorm.debug.distributions.face_cards[fc_bucket] or 0
     ) + 1
@@ -447,22 +601,24 @@ function Brainstorm.is_valid_deck(
   if dominant_suit_ratio and dominant_suit_ratio > 0 then
     local sorted_suits = {}
     for suit, count in pairs(suit_count) do
-      table.insert(sorted_suits, { suit = suit, count = count })
+      table_insert(sorted_suits, { suit = suit, count = count })
     end
 
     if #sorted_suits > 0 then
-      table.sort(sorted_suits, function(a, b)
+      table_sort(sorted_suits, function(a, b)
         return a.count > b.count
       end)
 
-      -- Sum the top 2 suit counts
+      -- Calculate the combined percentage of the top 2 suits
+      -- This represents how "suited" the deck is
+      -- Higher values mean more cards of the same suits
       local top_2_suit_count = sorted_suits[1].count
         + (sorted_suits[2] and sorted_suits[2].count or 0)
       local top_2_suit_percentage = top_2_suit_count / total_cards
 
       -- Track suit ratio distribution
       if Brainstorm.debug.enabled then
-        local ratio_bucket = math.floor(top_2_suit_percentage * 10) * 10
+        local ratio_bucket = math_floor(top_2_suit_percentage * 10) * 10
         Brainstorm.debug.distributions.suit_ratios[ratio_bucket] = (
           Brainstorm.debug.distributions.suit_ratios[ratio_bucket] or 0
         ) + 1
@@ -503,7 +659,7 @@ function Brainstorm.is_valid_deck(
 end
 
 function Brainstorm.print_debug_report(success)
-  local elapsed = os.clock() - Brainstorm.debug.start_time
+  local elapsed = os_clock() - Brainstorm.debug.start_time
   local seeds_per_sec = Brainstorm.debug.seeds_tested / elapsed
 
   print("========================================")
@@ -618,7 +774,7 @@ function Brainstorm.print_debug_report(success)
 end
 
 function Brainstorm.print_periodic_update()
-  local elapsed = os.clock() - Brainstorm.debug.start_time
+  local elapsed = os_clock() - Brainstorm.debug.start_time
   local seeds_per_sec = Brainstorm.debug.seeds_tested / elapsed
 
   print(
@@ -632,8 +788,12 @@ function Brainstorm.print_periodic_update()
   )
 end
 
+-- Perform a single manual reroll
+-- Preserves stake and challenge settings
 function Brainstorm.reroll()
-  local G = G -- Cache global G for performance
+  local G = G -- Cache global for slight performance gain
+
+  -- Preserve game state for restart
   G.GAME.viewed_back = nil
   G.run_setup_seed = G.GAME.seeded
   G.challenge_tab = G.GAME and G.GAME.challenge and G.GAME.challenge_tab or nil
@@ -650,24 +810,27 @@ function Brainstorm.reroll()
   G:start_run({ stake = stake, seed = seed, challenge = G.challenge_tab })
 end
 
+-- Hook into the game's update loop for auto-reroll functionality
+-- This is called every frame when the game is running
 local update_ref = Game.update
 function Game:update(dt)
-  update_ref(self, dt)
+  update_ref(self, dt) -- Call original update function
 
+  -- Handle auto-reroll if active
   if Brainstorm.ar_active then
     -- Initialize debug tracking on first frame
     if Brainstorm.debug.start_time == 0 then
-      Brainstorm.debug.start_time = os.clock()
-      Brainstorm.debug.last_report_time = os.clock()
+      Brainstorm.debug.start_time = os_clock()
+      Brainstorm.debug.last_report_time = os_clock()
     end
 
     -- Print periodic updates every 5 seconds
     if
       Brainstorm.debug.enabled
-      and os.clock() - Brainstorm.debug.last_report_time > 5
+      and os_clock() - Brainstorm.debug.last_report_time > 5
     then
       Brainstorm.print_periodic_update()
-      Brainstorm.debug.last_report_time = os.clock()
+      Brainstorm.debug.last_report_time = os_clock()
     end
 
     Brainstorm.ar_frames = Brainstorm.ar_frames + 1
@@ -680,10 +843,11 @@ function Game:update(dt)
       -- AR_INTERVAL is 0.01 seconds, so we run 100 times per second
       -- Divide spf_int by 100 to get seeds per interval
       local seeds_to_try =
-        math.max(1, math.floor(Brainstorm.config.ar_prefs.spf_int / 100))
+        math_max(1, math_floor(Brainstorm.config.ar_prefs.spf_int / 100))
       local seed_found = nil
 
-      -- Check if we have Erratic deck requirements
+      -- Determine if we need to validate Erratic deck requirements
+      -- Erratic decks have random card distributions that need checking
       local has_erratic_requirements = G.GAME.starting_params.erratic_suits_and_ranks
         and (
           Brainstorm.config.ar_prefs.face_count > 0
@@ -699,14 +863,15 @@ function Game:update(dt)
         or (#Brainstorm.config.ar_filters.pack > 0)
 
       if has_erratic_requirements then
-        -- For Erratic, dynamically adjust based on performance
-        local max_seeds = 5 -- Conservative default
+        -- Performance optimization for Erratic deck searches
+        -- Limit seeds per frame to prevent lag spikes
+        local max_seeds = 5 -- Conservative default to maintain 60 FPS
         if Brainstorm.config.ar_prefs.spf_int <= 500 then
           max_seeds = seeds_to_try -- Use full speed for low settings
         elseif Brainstorm.config.ar_prefs.spf_int <= 1000 then
-          max_seeds = math.min(seeds_to_try, 5) -- Cap at 5 for medium
+          max_seeds = math_min(seeds_to_try, 5) -- Cap at 5 for medium
         else
-          max_seeds = math.min(seeds_to_try, 10) -- Cap at 10 for high
+          max_seeds = math_min(seeds_to_try, 10) -- Cap at 10 for high
         end
         local erratic_seeds_to_try = max_seeds
 
@@ -831,15 +996,22 @@ end
 local ffi = require("ffi")
 local lovely = require("lovely")
 
--- FFI definition for native DLL
+-- Foreign Function Interface (FFI) for native DLL integration
+-- The DLL provides high-performance seed filtering without game restarts
 local ffi_loaded = false
+local immolate_dll = nil -- Cache the DLL handle to avoid repeated loading
+
+-- Initialize FFI definitions for DLL functions
 local function init_ffi()
   if not ffi_loaded then
     local success, err = pcall(
       ffi.cdef,
       [[
+      // Enhanced brainstorm function with dual tag support
       const char* brainstorm(const char* seed, const char* voucher, const char* pack, const char* tag1, const char* tag2, double souls, bool observatory, bool perkeo);
+      // Get both tags for a specific seed
       const char* get_tags(const char* seed);
+      // Free memory allocated by DLL (prevents memory leaks)
       void free_result(const char* result);
     ]]
     )
@@ -852,9 +1024,14 @@ local function init_ffi()
   return true
 end
 
+-- Stop auto-reroll and clean up resources
+-- Parameters:
+--   success: Whether a matching seed was found
 function Brainstorm.stop_auto_reroll(success)
   Brainstorm.ar_active = false
   Brainstorm.ar_frames = 0
+
+  -- Remove UI text if present
   if Brainstorm.ar_text then
     if Brainstorm.ar_text.AT then
       Brainstorm.remove_attention_text(Brainstorm.ar_text)
@@ -884,7 +1061,10 @@ function Brainstorm.stop_auto_reroll(success)
   }
 end
 
+-- Generate and test seeds using the native DLL
+-- Returns a matching seed or nil if none found
 function Brainstorm.auto_reroll()
+  -- Generate a pseudo-random seed based on cursor position and time
   local seed_found = random_string(
     8,
     G.CONTROLLER.cursor_hover.T.x * SEED_X_FACTOR
@@ -892,15 +1072,34 @@ function Brainstorm.auto_reroll()
       + SEED_TIME_FACTOR * G.CONTROLLER.cursor_hover.time
   )
 
-  -- Load native DLL with error handling
+  -- Load native DLL with error handling (cache DLL handle)
   if not init_ffi() then
     print("[Brainstorm] FFI initialization failed")
     return nil
   end
-  local success, immolate = pcall(ffi.load, Brainstorm.PATH .. "/Immolate.dll")
-  if not success then
-    print("[Brainstorm] Failed to load Immolate.dll: " .. tostring(immolate))
-    return nil
+
+  -- Use cached DLL handle if available
+  local immolate = immolate_dll
+  if not immolate then
+    local dll_path = Brainstorm.PATH .. "/Immolate.dll"
+
+    -- Check if DLL exists first
+    local dll_file = io.open(dll_path, "rb")
+    if not dll_file then
+      if Brainstorm.debug.enabled then
+        print("[Brainstorm] DLL not found at: " .. dll_path)
+      end
+      return nil
+    end
+    dll_file:close()
+
+    local success
+    success, immolate = pcall(ffi.load, dll_path)
+    if not success then
+      print("[Brainstorm] Failed to load Immolate.dll: " .. tostring(immolate))
+      return nil
+    end
+    immolate_dll = immolate -- Cache for future use
   end
   -- Extract pack name from configuration
   local pack = ""
@@ -932,23 +1131,25 @@ function Brainstorm.auto_reroll()
     key = Brainstorm.config.ar_filters.voucher_name,
   })
 
-  -- Detect which DLL version we have and call appropriately
+  -- Smart compatibility layer: Detect DLL version and use appropriate call
+  -- Enhanced DLL (8 params) supports dual tags internally for 10-100x speedup
+  -- Original DLL (7 params) requires external validation (slower)
   local result = nil
-  
-  -- Try calling with 8 parameters (enhanced DLL with dual tag support)
+
+  -- Try enhanced DLL first (8 parameters with dual tag support)
   local enhanced_success, enhanced_result = pcall(function()
     return immolate.brainstorm(
       seed_found,
       voucher_name,
-      pack_name, 
+      pack_name,
       tag_name,
-      tag2_name,  -- 8th parameter for enhanced DLL
+      tag2_name, -- 8th parameter for enhanced DLL
       Brainstorm.config.ar_filters.soul_skip,
       Brainstorm.config.ar_filters.inst_observatory,
       Brainstorm.config.ar_filters.inst_perkeo
     )
   end)
-  
+
   if enhanced_success then
     -- Enhanced DLL detected and working!
     result = enhanced_result
@@ -956,7 +1157,8 @@ function Brainstorm.auto_reroll()
       print("[Brainstorm] Using enhanced DLL for dual tag search (fast mode)")
     end
   else
-    -- Fall back to old DLL with 7 parameters
+    -- Fall back to original DLL (7 parameters, no dual tag support)
+    -- This path is slower for dual tags as it requires game restarts
     if Brainstorm.debug.enabled then
       print("[Brainstorm] Using original DLL (compatibility mode)")
       if tag2_name ~= "" then
@@ -964,20 +1166,20 @@ function Brainstorm.auto_reroll()
         print("[Brainstorm] Install enhanced DLL for 10-100x faster searches")
       end
     end
-    
+
     -- Old DLL only checks for first tag
     local call_success, call_result = pcall(function()
       return immolate.brainstorm(
         seed_found,
         voucher_name,
         pack_name,
-        tag_name,  -- Only first tag for old DLL
+        tag_name, -- Only first tag for old DLL
         Brainstorm.config.ar_filters.soul_skip,
         Brainstorm.config.ar_filters.inst_observatory,
         Brainstorm.config.ar_filters.inst_perkeo
       )
     end)
-    
+
     if call_success then
       result = call_result
     else
@@ -987,14 +1189,28 @@ function Brainstorm.auto_reroll()
   end
 
   seed_found = result and ffi.string(result) or nil
+
+  -- Free memory if enhanced DLL (always try to free for both versions)
+  if result then
+    if immolate.free_result then
+      local free_success = pcall(immolate.free_result, result)
+      if not free_success and Brainstorm.debug.enabled then
+        print("[Brainstorm] Warning: Failed to free DLL result memory")
+      end
+    end
+  end
+
   -- Return the seed without restarting the game
   -- The caller will decide whether to restart based on deck validation
   return seed_found
 end
 
+-- Hook to color-code filtered seeds in the UI
+-- Filtered seeds appear in blue instead of red
 local cursr = create_UIBox_round_scores_row
 function create_UIBox_round_scores_row(score, text_colour)
   local ret = cursr(score, text_colour)
+  -- Color logic: Red for manual seeds, Blue for filtered seeds, Black otherwise
   ret.nodes[2].nodes[1].config.colour = (score == "seed" and G.GAME.seeded)
       and G.C.RED
     or (score == "seed" and G.GAME.used_filter) and G.C.BLUE
