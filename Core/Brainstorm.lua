@@ -15,21 +15,24 @@ if logger_ok then
 else
   -- Fallback if logger not available
   log = {
-    trace = function(msg) end,
-    debug = function(msg)
+    trace = function(msg, data) end,
+    debug = function(msg, data)
       if Brainstorm.debug and Brainstorm.debug.enabled then
-        print("[DEBUG] " .. msg)
+        print("[DEBUG] " .. tostring(msg))
       end
     end,
-    info = function(msg)
-      print("[INFO] " .. msg)
+    info = function(msg, data)
+      print("[INFO] " .. tostring(msg))
     end,
-    warn = function(msg)
-      print("[WARN] " .. msg)
+    warn = function(msg, data)
+      print("[WARN] " .. tostring(msg))
     end,
-    error = function(msg)
-      print("[ERROR] " .. msg)
+    error = function(msg, data)
+      print("[ERROR] " .. tostring(msg))
     end,
+    start_timer = function() end,
+    end_timer = function() end,
+    log_throttled = function() end,
   }
 end
 
@@ -237,18 +240,20 @@ function Brainstorm.init()
 
   print("[Brainstorm] Found mod at: " .. Brainstorm.PATH)
 
-  -- Initialize logger with file path
-  if logger_ok and logger.global then
+  Brainstorm.load_config()
+  Brainstorm.debug.enabled = Brainstorm.config.debug_enabled or false
+
+  -- Initialize logger with file path only if debug is enabled
+  if logger_ok and logger.global and Brainstorm.debug.enabled then
     logger.global.file_path = Brainstorm.PATH .. "/brainstorm.log"
     logger.global:rotate_log_if_needed()
+    -- Recreate the module logger with file path configured
+    log = logger.for_module("Brainstorm")
     log:info(
       "Brainstorm initialized",
       { version = Brainstorm.VERSION, path = Brainstorm.PATH }
     )
   end
-
-  Brainstorm.load_config()
-  Brainstorm.debug.enabled = Brainstorm.config.debug_enabled or false
 
   -- Load UI with error handling
   local ui_path = Brainstorm.PATH .. "/UI/ui.lua"
@@ -495,8 +500,8 @@ function Brainstorm.check_dual_tags()
   if tag1 == tag2 then
     local both_match = (small_blind_tag == tag1 and big_blind_tag == tag1)
     if both_match then
-      log:info("Dual tag success: Both blinds have " .. tag1)
       if Brainstorm.debug.enabled then
+        log:info("Dual tag success: Both blinds have " .. tag1)
         Brainstorm.debug.dual_tag_successes = (
           Brainstorm.debug.dual_tag_successes or 0
         ) + 1
@@ -511,8 +516,8 @@ function Brainstorm.check_dual_tags()
     local has_tag2 = (small_blind_tag == tag2 or big_blind_tag == tag2)
 
     if has_tag1 and has_tag2 then
-      log:info("Dual tag success: Both tags found (order-agnostic)")
       if Brainstorm.debug.enabled then
+        log:info("Dual tag success: Both tags found (order-agnostic)")
         Brainstorm.debug.dual_tag_successes = (
           Brainstorm.debug.dual_tag_successes or 0
         ) + 1
@@ -939,10 +944,12 @@ function Game:update(dt)
                 )
               then
                 -- Found a valid seed that meets all criteria
-                log:info("Seed found!", {
-                  seed = test_seed,
-                  seeds_tested = Brainstorm.debug.seeds_tested,
-                })
+                if Brainstorm.debug.enabled then
+                  log:info("Seed found!", {
+                    seed = test_seed,
+                    seeds_tested = Brainstorm.debug.seeds_tested,
+                  })
+                end
                 Brainstorm.stop_auto_reroll(true)
                 G.GAME.used_filter = true
                 G.GAME.seeded = false
@@ -971,10 +978,12 @@ function Game:update(dt)
               local tags_valid = Brainstorm.check_dual_tags()
 
               if tags_valid then
-                log:info("Seed found!", {
-                  seed = seed_found,
-                  seeds_tested = Brainstorm.debug.seeds_tested + 1,
-                })
+                if Brainstorm.debug.enabled then
+                  log:info("Seed found!", {
+                    seed = seed_found,
+                    seeds_tested = Brainstorm.debug.seeds_tested + 1,
+                  })
+                end
                 G.GAME.used_filter = true
                 G.GAME.seeded = false
                 Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested
@@ -1107,7 +1116,9 @@ function Brainstorm.auto_reroll()
     -- Check if DLL exists first
     local dll_file = io.open(dll_path, "rb")
     if not dll_file then
-      log:error("DLL not found", { path = dll_path })
+      if Brainstorm.debug.enabled then
+        log:error("DLL not found", { path = dll_path })
+      end
       return nil
     end
     dll_file:close()
@@ -1115,11 +1126,15 @@ function Brainstorm.auto_reroll()
     local success
     success, immolate = pcall(ffi.load, dll_path)
     if not success then
-      log:error("Failed to load Immolate.dll", { error = tostring(immolate) })
+      if Brainstorm.debug.enabled then
+        log:error("Failed to load Immolate.dll", { error = tostring(immolate) })
+      end
       return nil
     end
     immolate_dll = immolate -- Cache for future use
-    log:info("DLL loaded successfully")
+    if Brainstorm.debug.enabled then
+      log:info("DLL loaded successfully")
+    end
 
     -- Configure GPU/CUDA support based on config
     if immolate_dll.set_use_cuda then
@@ -1131,16 +1146,22 @@ function Brainstorm.auto_reroll()
         local info_ptr = immolate_dll.get_hardware_info()
         if info_ptr ~= nil then
           local hardware_info = ffi.string(info_ptr)
-          log:info("Hardware detected", { info = hardware_info })
+          if Brainstorm.debug.enabled then
+            log:info("Hardware detected", { info = hardware_info })
+          end
 
           -- Check actual acceleration type
           if immolate_dll.get_acceleration_type then
             local accel_type = immolate_dll.get_acceleration_type()
             if accel_type == 1 then
-              log:info("GPU acceleration enabled")
+              if Brainstorm.debug.enabled then
+                log:info("GPU acceleration enabled")
+              end
               Brainstorm.debug.gpu_enabled = true
             else
-              log:info("Using CPU acceleration")
+              if Brainstorm.debug.enabled then
+                log:info("Using CPU acceleration")
+              end
               Brainstorm.debug.gpu_enabled = false
             end
           end
@@ -1222,7 +1243,9 @@ function Brainstorm.auto_reroll()
       and Brainstorm.debug.enabled
       and not Brainstorm.debug.dll_mode_logged
     then
-      log:info("Using enhanced DLL for dual tag search")
+      if Brainstorm.debug.enabled then
+        log:info("Using enhanced DLL for dual tag search")
+      end
       Brainstorm.debug.dll_mode_logged = true
     end
   else
@@ -1252,7 +1275,9 @@ function Brainstorm.auto_reroll()
     if call_success then
       result = call_result
     else
-      log:error("DLL call failed", { error = tostring(call_result) })
+      if Brainstorm.debug.enabled then
+        log:error("DLL call failed", { error = tostring(call_result) })
+      end
       return nil
     end
   end
@@ -1263,7 +1288,7 @@ function Brainstorm.auto_reroll()
   if result then
     if immolate.free_result then
       local free_success = pcall(immolate.free_result, result)
-      if not free_success then
+      if not free_success and Brainstorm.debug.enabled then
         log:warn("Failed to free DLL result memory")
       end
     end
