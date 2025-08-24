@@ -1,7 +1,7 @@
 #pragma once
 
 // Dynamic CUDA loader for Windows cross-compilation
-// This allows us to build on Linux and run on Windows with CUDA
+// Build-time depends only on headers; all functions resolved at runtime.
 
 #ifdef _WIN32
 #include <windows.h>
@@ -9,138 +9,37 @@
 #include <dlfcn.h>
 #endif
 
-#include <cstdint>
 #include <iostream>
+#include <cstdint>
+#include <cstring>
 
-// CUDA types we need
-typedef enum {
+// Use the REAL CUDA runtime types to avoid ABI/struct mismatches
+// This header is platform-agnostic; we do not link against cudart at build time.
+#ifdef __CUDACC__
+#include <cuda_runtime_api.h>
+#else
+// When building with MinGW without CUDA headers, provide minimal definitions
+// These must match CUDA's exact layout - using official headers is strongly preferred
+#ifdef __has_include
+  #if __has_include(<cuda_runtime_api.h>)
+    #include <cuda_runtime_api.h>
+    #define HAVE_CUDA_HEADERS 1
+  #endif
+#endif
+
+#ifndef HAVE_CUDA_HEADERS
+// Minimal CUDA type definitions when headers not available
+// These MUST match the exact CUDA runtime definitions
+typedef enum cudaError {
     cudaSuccess = 0,
     cudaErrorInvalidValue = 1,
     cudaErrorMemoryAllocation = 2,
     cudaErrorInitializationError = 3,
-    cudaErrorCudartUnloading = 4,
-    cudaErrorProfilerDisabled = 5,
-    cudaErrorProfilerNotInitialized = 6,
-    cudaErrorProfilerAlreadyStarted = 7,
-    cudaErrorProfilerAlreadyStopped = 8,
-    cudaErrorInvalidConfiguration = 9,
-    cudaErrorInvalidPitchValue = 12,
-    cudaErrorInvalidSymbol = 13,
-    cudaErrorInvalidHostPointer = 16,
-    cudaErrorInvalidDevicePointer = 17,
-    cudaErrorInvalidTexture = 18,
-    cudaErrorInvalidTextureBinding = 19,
-    cudaErrorInvalidChannelDescriptor = 20,
-    cudaErrorInvalidMemcpyDirection = 21,
-    cudaErrorAddressOfConstant = 22,
-    cudaErrorTextureFetchFailed = 23,
-    cudaErrorTextureNotBound = 24,
-    cudaErrorSynchronizationError = 25,
-    cudaErrorInvalidFilterSetting = 26,
-    cudaErrorInvalidNormSetting = 27,
-    cudaErrorMixedDeviceExecution = 28,
-    cudaErrorNotYetImplemented = 31,
-    cudaErrorMemoryValueTooLarge = 32,
-    cudaErrorStubLibrary = 34,
-    cudaErrorInsufficientDriver = 35,
-    cudaErrorCallRequiresNewerDriver = 36,
-    cudaErrorInvalidSurface = 37,
-    cudaErrorDuplicateVariableName = 43,
-    cudaErrorDuplicateTextureName = 44,
-    cudaErrorDuplicateSurfaceName = 45,
-    cudaErrorDevicesUnavailable = 46,
-    cudaErrorIncompatibleDriverContext = 49,
-    cudaErrorMissingConfiguration = 52,
-    cudaErrorPriorLaunchFailure = 53,
-    cudaErrorLaunchMaxDepthExceeded = 65,
-    cudaErrorLaunchFileScopedTex = 66,
-    cudaErrorLaunchFileScopedSurf = 67,
-    cudaErrorSyncDepthExceeded = 68,
-    cudaErrorLaunchPendingCountExceeded = 69,
-    cudaErrorInvalidDeviceFunction = 98,
-    cudaErrorNoDevice = 100,
     cudaErrorInvalidDevice = 101,
-    cudaErrorDeviceNotLicensed = 102,
-    cudaErrorSoftwareValidityNotEstablished = 103,
-    cudaErrorStartupFailure = 127,
-    cudaErrorInvalidKernelImage = 200,
-    cudaErrorDeviceUninitialized = 201,
-    cudaErrorMapBufferObjectFailed = 205,
-    cudaErrorUnmapBufferObjectFailed = 206,
-    cudaErrorArrayIsMapped = 207,
-    cudaErrorAlreadyMapped = 208,
-    cudaErrorNoKernelImageForDevice = 209,
-    cudaErrorAlreadyAcquired = 210,
-    cudaErrorNotMapped = 211,
-    cudaErrorNotMappedAsArray = 212,
-    cudaErrorNotMappedAsPointer = 213,
-    cudaErrorECCUncorrectable = 214,
-    cudaErrorUnsupportedLimit = 215,
-    cudaErrorDeviceAlreadyInUse = 216,
-    cudaErrorPeerAccessUnsupported = 217,
-    cudaErrorInvalidPtx = 218,
-    cudaErrorInvalidGraphicsContext = 219,
-    cudaErrorNvlinkUncorrectable = 220,
-    cudaErrorJitCompilerNotFound = 221,
-    cudaErrorUnsupportedPtxVersion = 222,
-    cudaErrorJitCompilationDisabled = 223,
-    cudaErrorUnsupportedExecAffinity = 224,
-    cudaErrorInvalidSource = 300,
-    cudaErrorFileNotFound = 301,
-    cudaErrorSharedObjectSymbolNotFound = 302,
-    cudaErrorSharedObjectInitFailed = 303,
-    cudaErrorOperatingSystem = 304,
-    cudaErrorInvalidResourceHandle = 400,
-    cudaErrorIllegalState = 401,
-    cudaErrorSymbolNotFound = 500,
-    cudaErrorNotReady = 600,
-    cudaErrorIllegalAddress = 700,
-    cudaErrorLaunchOutOfResources = 701,
-    cudaErrorLaunchTimeout = 702,
-    cudaErrorLaunchIncompatibleTexturing = 703,
-    cudaErrorPeerAccessAlreadyEnabled = 704,
-    cudaErrorPeerAccessNotEnabled = 705,
-    cudaErrorSetOnActiveProcess = 708,
-    cudaErrorContextIsDestroyed = 709,
-    cudaErrorAssert = 710,
-    cudaErrorTooManyPeers = 711,
-    cudaErrorHostMemoryAlreadyRegistered = 712,
-    cudaErrorHostMemoryNotRegistered = 713,
-    cudaErrorHardwareStackError = 714,
-    cudaErrorIllegalInstruction = 715,
-    cudaErrorMisalignedAddress = 716,
-    cudaErrorInvalidAddressSpace = 717,
-    cudaErrorInvalidPc = 718,
-    cudaErrorIllegalInstruction2 = 719,
-    cudaErrorLaunchFailure = 719,
-    cudaErrorCooperativeLaunchTooLarge = 720,
-    cudaErrorNotPermitted = 800,
-    cudaErrorNotSupported = 801,
-    cudaErrorSystemNotReady = 802,
-    cudaErrorSystemDriverMismatch = 803,
-    cudaErrorCompatNotSupportedOnDevice = 804,
-    cudaErrorMpsConnectionFailed = 805,
-    cudaErrorMpsRpcFailure = 806,
-    cudaErrorMpsServerNotReady = 807,
-    cudaErrorMpsMaxClientsReached = 808,
-    cudaErrorMpsMaxConnectionsReached = 809,
-    cudaErrorStreamCaptureUnsupported = 900,
-    cudaErrorStreamCaptureInvalidated = 901,
-    cudaErrorStreamCaptureMerge = 902,
-    cudaErrorStreamCaptureUnmatched = 903,
-    cudaErrorStreamCaptureUnjoined = 904,
-    cudaErrorStreamCaptureIsolation = 905,
-    cudaErrorStreamCaptureImplicit = 906,
-    cudaErrorCapturedEvent = 907,
-    cudaErrorStreamCaptureWrongThread = 908,
-    cudaErrorTimeout = 909,
-    cudaErrorGraphExecUpdateFailure = 910,
-    cudaErrorExternalDevice = 911,
-    cudaErrorUnknown = 999,
-    cudaErrorApiFailureBase = 10000
+    cudaErrorUnknown = 999
 } cudaError_t;
 
-typedef enum {
+typedef enum cudaMemcpyKind {
     cudaMemcpyHostToHost = 0,
     cudaMemcpyHostToDevice = 1,
     cudaMemcpyDeviceToHost = 2,
@@ -148,6 +47,43 @@ typedef enum {
     cudaMemcpyDefault = 4
 } cudaMemcpyKind;
 
+// Device attributes for safer queries
+typedef enum cudaDeviceAttr {
+    cudaDevAttrComputeCapabilityMajor = 75,
+    cudaDevAttrComputeCapabilityMinor = 76,
+    cudaDevAttrMultiProcessorCount = 16,
+    cudaDevAttrMaxThreadsPerBlock = 1,
+    cudaDevAttrMaxBlockDimX = 2,
+    cudaDevAttrMaxBlockDimY = 3,
+    cudaDevAttrMaxBlockDimZ = 4,
+    cudaDevAttrMaxGridDimX = 5,
+    cudaDevAttrMaxGridDimY = 6,
+    cudaDevAttrMaxGridDimZ = 7,
+    cudaDevAttrTotalConstantMemory = 9,
+    cudaDevAttrWarpSize = 10,
+    cudaDevAttrMaxPitch = 11,
+    cudaDevAttrMaxRegistersPerBlock = 12,
+    cudaDevAttrClockRate = 13,
+    cudaDevAttrTextureAlignment = 14,
+    cudaDevAttrGpuOverlap = 15,
+    cudaDevAttrKernelExecTimeout = 17,
+    cudaDevAttrIntegrated = 18,
+    cudaDevAttrCanMapHostMemory = 19,
+    cudaDevAttrComputeMode = 20,
+    cudaDevAttrConcurrentKernels = 31,
+    cudaDevAttrEccEnabled = 32,
+    cudaDevAttrPciBusId = 33,
+    cudaDevAttrPciDeviceId = 34,
+    cudaDevAttrMemoryClockRate = 36,
+    cudaDevAttrGlobalMemoryBusWidth = 37,
+    cudaDevAttrL2CacheSize = 38,
+    cudaDevAttrMaxThreadsPerMultiProcessor = 39,
+    cudaDevAttrUnifiedAddressing = 41,
+    cudaDevAttrPciDomainId = 50
+} cudaDeviceAttr;
+
+// Minimal cudaDeviceProp struct - DO NOT USE unless absolutely necessary
+// The actual struct layout varies between CUDA versions
 struct cudaDeviceProp {
     char name[256];
     size_t totalGlobalMem;
@@ -162,67 +98,16 @@ struct cudaDeviceProp {
     size_t totalConstMem;
     int major;
     int minor;
-    size_t textureAlignment;
-    size_t texturePitchAlignment;
-    int deviceOverlap;
-    int multiProcessorCount;
-    int kernelExecTimeoutEnabled;
-    int integrated;
-    int canMapHostMemory;
-    int computeMode;
-    int maxTexture1D;
-    int maxTexture1DMipmap;
-    int maxTexture1DLinear;
-    int maxTexture2D[2];
-    int maxTexture2DMipmap[2];
-    int maxTexture2DLinear[3];
-    int maxTexture2DGather[2];
-    int maxTexture3D[3];
-    int maxTexture3DAlt[3];
-    int maxTextureCubemap;
-    int maxTexture1DLayered[2];
-    int maxTexture2DLayered[3];
-    int maxTextureCubemapLayered[2];
-    int maxSurface1D;
-    int maxSurface2D[2];
-    int maxSurface3D[3];
-    int maxSurface1DLayered[2];
-    int maxSurface2DLayered[3];
-    int maxSurfaceCubemap;
-    int maxSurfaceCubemapLayered[2];
-    size_t surfaceAlignment;
-    int concurrentKernels;
-    int ECCEnabled;
-    int pciBusID;
-    int pciDeviceID;
-    int pciDomainID;
-    int tccDriver;
-    int asyncEngineCount;
-    int unifiedAddressing;
-    int memoryClockRate;
-    int memoryBusWidth;
-    int l2CacheSize;
-    int persistingL2CacheMaxSize;
-    int maxThreadsPerMultiProcessor;
-    int streamPrioritiesSupported;
-    int globalL1CacheSupported;
-    int localL1CacheSupported;
-    size_t sharedMemPerMultiprocessor;
-    int regsPerMultiprocessor;
-    int managedMemory;
-    int isMultiGpuBoard;
-    int multiGpuBoardGroupID;
-    int singleToDoublePrecisionPerfRatio;
-    int pageableMemoryAccess;
-    int concurrentManagedAccess;
-    int computePreemptionSupported;
-    int canUseHostPointerForRegisteredMem;
-    int cooperativeLaunch;
-    int cooperativeMultiDeviceLaunch;
-    int pageableMemoryAccessUsesHostPageTables;
-    int directManagedMemAccessFromHost;
-    int accessPolicyMaxWindowSize;
+    // ... many more fields that vary by version
+    // This is why we should avoid using the struct directly!
 };
+#endif // !HAVE_CUDA_HEADERS
+#endif // !__CUDACC__
+
+// Undefine any macros that might conflict
+#ifdef cudaGetDeviceProperties
+#undef cudaGetDeviceProperties
+#endif
 
 // Function pointers for CUDA runtime API
 typedef cudaError_t (*cudaMalloc_t)(void**, size_t);
@@ -234,6 +119,14 @@ typedef cudaError_t (*cudaSetDevice_t)(int);
 typedef cudaError_t (*cudaDeviceSynchronize_t)(void);
 typedef cudaError_t (*cudaGetLastError_t)(void);
 typedef const char* (*cudaGetErrorString_t)(cudaError_t);
+typedef cudaError_t (*cudaDeviceGetAttribute_t)(int*, cudaDeviceAttr, int);
+typedef cudaError_t (*cudaGetDeviceProperties_v2_t)(cudaDeviceProp*, int);
+typedef cudaError_t (*cudaRuntimeGetVersion_t)(int*);
+typedef cudaError_t (*cudaDriverGetVersion_t)(int*);
+typedef cudaError_t (*cudaMemGetInfo_t)(size_t*, size_t*);
+
+// New safer function for getting device name
+typedef cudaError_t (*cudaDeviceGetName_t)(char*, int, int);
 
 // Dynamic CUDA loader class
 class CudaWrapper {
@@ -248,25 +141,43 @@ public:
     cudaMemcpy_t cudaMemcpy = nullptr;
     cudaGetDeviceCount_t cudaGetDeviceCount = nullptr;
     cudaGetDeviceProperties_t cudaGetDeviceProperties = nullptr;
+    cudaGetDeviceProperties_v2_t cudaGetDeviceProperties_v2 = nullptr;
     cudaSetDevice_t cudaSetDevice = nullptr;
     cudaDeviceSynchronize_t cudaDeviceSynchronize = nullptr;
     cudaGetLastError_t cudaGetLastError = nullptr;
     cudaGetErrorString_t cudaGetErrorString = nullptr;
+    cudaDeviceGetAttribute_t cudaDeviceGetAttribute = nullptr;
+    cudaDeviceGetName_t cudaDeviceGetName = nullptr;
+    cudaRuntimeGetVersion_t cudaRuntimeGetVersion = nullptr;
+    cudaDriverGetVersion_t cudaDriverGetVersion = nullptr;
+    cudaMemGetInfo_t cudaMemGetInfo = nullptr;
     
     bool init() {
         if (initialized) return true;
         
 #ifdef _WIN32
-        // Try to load CUDA runtime DLL on Windows
-        cuda_handle = LoadLibraryA("cudart64_12.dll");
-        if (!cuda_handle) {
-            cuda_handle = LoadLibraryA("cudart64_11.dll");
+        // Try different CUDA runtime versions
+        const char* cuda_libs[] = {
+            "cudart64_12.dll",
+            "cudart64_11.dll",
+            "cudart64_110.dll",
+            "cudart64_10.dll",
+            "cudart64_100.dll",
+            "cudart64.dll",
+            "cudart.dll",
+            nullptr
+        };
+        
+        for (int i = 0; cuda_libs[i] != nullptr; i++) {
+            cuda_handle = LoadLibraryA(cuda_libs[i]);
+            if (cuda_handle) {
+                std::cout << "[GPU] Loaded CUDA runtime: " << cuda_libs[i] << std::endl;
+                break;
+            }
         }
+        
         if (!cuda_handle) {
-            cuda_handle = LoadLibraryA("cudart64_10.dll");
-        }
-        if (!cuda_handle) {
-            std::cerr << "Failed to load CUDA runtime DLL" << std::endl;
+            std::cerr << "[GPU] Failed to load any CUDA runtime DLL" << std::endl;
             return false;
         }
         
@@ -275,11 +186,29 @@ public:
         cudaFree = (cudaFree_t)GetProcAddress((HMODULE)cuda_handle, "cudaFree");
         cudaMemcpy = (cudaMemcpy_t)GetProcAddress((HMODULE)cuda_handle, "cudaMemcpy");
         cudaGetDeviceCount = (cudaGetDeviceCount_t)GetProcAddress((HMODULE)cuda_handle, "cudaGetDeviceCount");
-        cudaGetDeviceProperties = (cudaGetDeviceProperties_t)GetProcAddress((HMODULE)cuda_handle, "cudaGetDeviceProperties_v2");
+        
+        // Try v2 first, then fallback to v1
+        cudaGetDeviceProperties_v2 = (cudaGetDeviceProperties_v2_t)GetProcAddress((HMODULE)cuda_handle, "cudaGetDeviceProperties_v2");
+        cudaGetDeviceProperties = (cudaGetDeviceProperties_t)GetProcAddress((HMODULE)cuda_handle, "cudaGetDeviceProperties");
+        if (!cudaGetDeviceProperties && cudaGetDeviceProperties_v2) {
+            // Use v2 as v1 if v1 not found
+            cudaGetDeviceProperties = (cudaGetDeviceProperties_t)cudaGetDeviceProperties_v2;
+        }
+        
         cudaSetDevice = (cudaSetDevice_t)GetProcAddress((HMODULE)cuda_handle, "cudaSetDevice");
         cudaDeviceSynchronize = (cudaDeviceSynchronize_t)GetProcAddress((HMODULE)cuda_handle, "cudaDeviceSynchronize");
         cudaGetLastError = (cudaGetLastError_t)GetProcAddress((HMODULE)cuda_handle, "cudaGetLastError");
         cudaGetErrorString = (cudaGetErrorString_t)GetProcAddress((HMODULE)cuda_handle, "cudaGetErrorString");
+        
+        // Safer attribute-based queries
+        cudaDeviceGetAttribute = (cudaDeviceGetAttribute_t)GetProcAddress((HMODULE)cuda_handle, "cudaDeviceGetAttribute");
+        cudaDeviceGetName = (cudaDeviceGetName_t)GetProcAddress((HMODULE)cuda_handle, "cudaDeviceGetName");
+        
+        // Version info
+        cudaRuntimeGetVersion = (cudaRuntimeGetVersion_t)GetProcAddress((HMODULE)cuda_handle, "cudaRuntimeGetVersion");
+        cudaDriverGetVersion = (cudaDriverGetVersion_t)GetProcAddress((HMODULE)cuda_handle, "cudaDriverGetVersion");
+        cudaMemGetInfo = (cudaMemGetInfo_t)GetProcAddress((HMODULE)cuda_handle, "cudaMemGetInfo");
+        
 #else
         // For Linux testing
         cuda_handle = dlopen("libcudart.so", RTLD_LAZY);
@@ -291,19 +220,57 @@ public:
         cudaFree = (cudaFree_t)dlsym(cuda_handle, "cudaFree");
         cudaMemcpy = (cudaMemcpy_t)dlsym(cuda_handle, "cudaMemcpy");
         cudaGetDeviceCount = (cudaGetDeviceCount_t)dlsym(cuda_handle, "cudaGetDeviceCount");
-        cudaGetDeviceProperties = (cudaGetDeviceProperties_t)dlsym(cuda_handle, "cudaGetDeviceProperties_v2");
+        
+        cudaGetDeviceProperties_v2 = (cudaGetDeviceProperties_v2_t)dlsym(cuda_handle, "cudaGetDeviceProperties_v2");
+        cudaGetDeviceProperties = (cudaGetDeviceProperties_t)dlsym(cuda_handle, "cudaGetDeviceProperties");
+        if (!cudaGetDeviceProperties && cudaGetDeviceProperties_v2) {
+            cudaGetDeviceProperties = (cudaGetDeviceProperties_t)cudaGetDeviceProperties_v2;
+        }
+        
         cudaSetDevice = (cudaSetDevice_t)dlsym(cuda_handle, "cudaSetDevice");
         cudaDeviceSynchronize = (cudaDeviceSynchronize_t)dlsym(cuda_handle, "cudaDeviceSynchronize");
         cudaGetLastError = (cudaGetLastError_t)dlsym(cuda_handle, "cudaGetLastError");
         cudaGetErrorString = (cudaGetErrorString_t)dlsym(cuda_handle, "cudaGetErrorString");
+        cudaDeviceGetAttribute = (cudaDeviceGetAttribute_t)dlsym(cuda_handle, "cudaDeviceGetAttribute");
+        cudaDeviceGetName = (cudaDeviceGetName_t)dlsym(cuda_handle, "cudaDeviceGetName");
+        cudaRuntimeGetVersion = (cudaRuntimeGetVersion_t)dlsym(cuda_handle, "cudaRuntimeGetVersion");
+        cudaDriverGetVersion = (cudaDriverGetVersion_t)dlsym(cuda_handle, "cudaDriverGetVersion");
+        cudaMemGetInfo = (cudaMemGetInfo_t)dlsym(cuda_handle, "cudaMemGetInfo");
 #endif
         
-        // Check if all functions loaded successfully
-        if (!cudaMalloc || !cudaFree || !cudaMemcpy || !cudaGetDeviceCount || 
-            !cudaGetDeviceProperties || !cudaSetDevice || !cudaDeviceSynchronize ||
-            !cudaGetLastError || !cudaGetErrorString) {
-            std::cerr << "Failed to load CUDA functions" << std::endl;
+        // Check minimum required functions
+        if (!cudaMalloc || !cudaFree || !cudaMemcpy || !cudaGetDeviceCount ||
+            !cudaSetDevice || !cudaDeviceSynchronize || !cudaGetLastError || !cudaGetErrorString) {
+            std::cerr << "[GPU] Failed to load core CUDA functions" << std::endl;
             return false;
+        }
+        
+        // At least one way to query device info must be present
+        bool can_query_device = false;
+        if (cudaDeviceGetAttribute && cudaDeviceGetName) {
+            std::cout << "[GPU] Using safer attribute-based device queries" << std::endl;
+            can_query_device = true;
+        } else if (cudaGetDeviceProperties || cudaGetDeviceProperties_v2) {
+            std::cout << "[GPU] WARNING: Using struct-based device queries (less safe)" << std::endl;
+            can_query_device = true;
+        }
+        
+        if (!can_query_device) {
+            std::cerr << "[GPU] No way to query device properties" << std::endl;
+            return false;
+        }
+        
+        // Log version info if available
+        if (cudaRuntimeGetVersion) {
+            int runtime_version = 0;
+            cudaRuntimeGetVersion(&runtime_version);
+            std::cout << "[GPU] CUDA Runtime version: " << runtime_version << std::endl;
+        }
+        
+        if (cudaDriverGetVersion) {
+            int driver_version = 0;
+            cudaDriverGetVersion(&driver_version);
+            std::cout << "[GPU] CUDA Driver version: " << driver_version << std::endl;
         }
         
         initialized = true;
@@ -322,8 +289,12 @@ public:
         initialized = false;
     }
     
-    bool is_available() {
-        return initialized;
+    bool is_available() const {
+        return initialized && cuda_handle != nullptr;
+    }
+    
+    ~CudaWrapper() {
+        cleanup();
     }
 };
 

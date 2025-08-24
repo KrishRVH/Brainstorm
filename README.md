@@ -1,6 +1,14 @@
 # Brainstorm v3.0 - Lightning-Fast Seed Filtering for Balatro
 
-A high-performance mod that finds perfect seeds in seconds instead of hours. Features dual tag searching, Erratic deck filtering, and save states.
+A high-performance mod that finds perfect seeds in seconds instead of hours. Features dual tag searching, Erratic deck filtering, save states, and optional GPU acceleration.
+
+## Status (2025-08-24)
+- ✅ **GPU CRASH FIXED** - RTX 4090 confirmed working, no crashes on Ctrl+A
+- ✅ **Struct mismatch resolved** - Correctly detects Compute 8.9, 24GB VRAM
+- ✅ Dual tag support fully working
+- ✅ Save states functional
+- ✅ GPU initialization stable (RTX 2060+ supported)
+- ⚠️ PTX kernel launch pending (currently falls back to CPU)
 
 ## Quick Start
 
@@ -9,7 +17,15 @@ A high-performance mod that finds perfect seeds in seconds instead of hours. Fea
 ./deploy.sh
 
 # Build DLL from source (optional)
-cd ImmolateCPP && ./build_simple.sh
+cd ImmolateCPP
+./build_simple.sh # CPU-only version (2.4MB)
+./build_gpu.sh    # GPU-accelerated (2.6MB, requires CUDA)
+```
+
+### GPU Acceleration (Optional)
+For RTX GPU support, you may need to copy CUDA runtime to mod folder:
+```powershell
+copy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin\cudart64_12.dll" "C:\Users\%USERNAME%\AppData\Roaming\Balatro\Mods\Brainstorm\"
 ```
 
 ## In-Game Usage
@@ -41,7 +57,7 @@ Brainstorm/
 │   └── build_simple.sh    # MinGW build script
 ├── config.lua             # User settings (auto-saved)
 ├── deploy.sh              # Installation script
-└── Immolate.dll           # Native acceleration (2.4MB = enhanced)
+└── Immolate.dll           # Native acceleration (2.4MB = CPU, 2.6MB = GPU)
 ```
 
 ### Building the DLL
@@ -71,8 +87,10 @@ Settings saved to `config.lua` using Balatro's STR_PACK format:
 ## Troubleshooting
 
 **"Mod not loading"** - Check Lovely injector is installed  
-**"Searches are slow"** - Ensure you have the 2.4MB enhanced DLL  
-**"Can't find good seeds"** - Double same tags are extremely rare (~0.1% chance)
+**"Searches are slow"** - Ensure you have the enhanced DLL (2.4MB CPU or 2.6MB GPU)  
+**"Can't find good seeds"** - Double same tags are extremely rare (~0.1% chance)  
+**"Game crashes on Ctrl+A"** - Check `gpu_debug.log` in mod folder for diagnostics  
+**"GPU not detected"** - Copy correct `cudart64_*.dll` to mod folder, check compute capability ≥7.0
 
 ## License
 

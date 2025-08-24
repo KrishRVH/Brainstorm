@@ -36,6 +36,24 @@ else
     echo -e "${YELLOW}⚠ CUDA not found. Building CPU-only version.${NC}"
 fi
 
+# Detect CUDA include path
+CUDA_INC=""
+if [ $CUDA_AVAILABLE -eq 1 ]; then
+    if [ -d "/usr/local/cuda/include" ]; then
+        CUDA_INC="/usr/local/cuda/include"
+    elif [ -d "/usr/local/cuda-12.6/include" ]; then
+        CUDA_INC="/usr/local/cuda-12.6/include"
+    elif [ -d "/usr/include/cuda" ]; then
+        CUDA_INC="/usr/include/cuda"
+    fi
+    
+    if [ -n "$CUDA_INC" ]; then
+        echo -e "${GREEN}✓ CUDA headers found:${NC} $CUDA_INC"
+    else
+        echo -e "${YELLOW}⚠ CUDA headers not found, using minimal definitions${NC}"
+    fi
+fi
+
 # Check for MinGW
 if ! command -v x86_64-w64-mingw32-g++ &> /dev/null; then
     echo -e "${RED}✗ MinGW not found. Please install mingw-w64${NC}"
@@ -84,17 +102,35 @@ if [ "$1" == "--cpu-only" ] || [ $CUDA_AVAILABLE -eq 0 ]; then
 else
     echo -e "\n${YELLOW}Building GPU+CPU unified version...${NC}"
     
-    # Step 1: Compile CUDA kernels to PTX for each architecture
-    echo "Step 1: Compiling CUDA kernels to PTX..."
+    # Step 1: Compile CUDA kernels to object file for linking
+    echo "Step 1: Compiling CUDA kernels to object file..."
     
-    # Compile to PTX for sm_70 (base architecture for most modern GPUs)
+    # Compile to relocatable device code
+    $NVCC_PATH \
+        -dc \
+        -O3 \
+        -arch=sm_70 \
+        -ccbin gcc-13 \
+        -Xcompiler -fPIC \
+        -o seed_filter.o \
+        ../src/gpu/seed_filter.cu \
+        2>&1 | tee build_cuda.log
+    
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        echo -e "${RED}✗ CUDA compilation to object failed${NC}"
+        exit 1
+    fi
+    
+    # Also compile to PTX for runtime loading (optional)
+    echo "Also creating PTX for runtime loading..."
     $NVCC_PATH \
         -ptx \
         -O3 \
         -arch=sm_70 \
+        -ccbin gcc-13 \
         -o seed_filter.ptx \
         ../src/gpu/seed_filter.cu \
-        2>&1 | tee build_cuda.log
+        2>&1 | tee -a build_cuda.log
     
     # Also create a fatbin with all architectures for embedding
     echo "Creating fatbin for multiple architectures..."
@@ -102,6 +138,7 @@ else
         -fatbin \
         -O3 \
         -arch=sm_70 \
+        -ccbin gcc-13 \
         -gencode=arch=compute_70,code=sm_70 \
         -gencode=arch=compute_75,code=sm_75 \
         -gencode=arch=compute_80,code=sm_80 \
@@ -121,12 +158,17 @@ else
     # Step 2: Compile GPU searcher with dynamic loading
     echo "Step 2: Compiling GPU searcher with dynamic CUDA loading..."
     
+    INCLUDE_FLAGS="-I ../src/"
+    if [ -n "$CUDA_INC" ]; then
+        INCLUDE_FLAGS="$INCLUDE_FLAGS -I $CUDA_INC"
+    fi
+    
     x86_64-w64-mingw32-g++ \
         -c \
         -O3 \
         -std=c++17 \
         -DGPU_ENABLED \
-        -I ../src/ \
+        $INCLUDE_FLAGS \
         -o gpu_searcher.o \
         ../src/gpu/gpu_searcher_dynamic.cpp \
         2>&1 | tee -a build_cuda.log
@@ -141,7 +183,7 @@ else
         -DBUILDING_DLL \
         -DGPU_ENABLED \
         -DGPU_DYNAMIC_LOAD \
-        -I ../src/ \
+        $INCLUDE_FLAGS \
         -o brainstorm_unified.o \
         ../src/brainstorm_unified.cpp \
         2>&1 | tee -a build_cuda.log

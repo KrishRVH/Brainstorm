@@ -1233,11 +1233,17 @@ function Brainstorm.auto_reroll()
   local pack_name = pack ~= ""
       and localize({ type = "name_text", set = "Other", key = pack })
     or ""
-  local tag_name = localize({
-    type = "name_text",
-    set = "Tag",
-    key = Brainstorm.config.ar_filters.tag_name,
-  })
+  local tag_name = ""
+  if
+    Brainstorm.config.ar_filters.tag_name
+    and Brainstorm.config.ar_filters.tag_name ~= ""
+  then
+    tag_name = localize({
+      type = "name_text",
+      set = "Tag",
+      key = Brainstorm.config.ar_filters.tag_name,
+    }) or ""
+  end
   local tag2_name = ""
   if
     Brainstorm.config.ar_filters.tag2_name
@@ -1249,16 +1255,38 @@ function Brainstorm.auto_reroll()
       key = Brainstorm.config.ar_filters.tag2_name,
     })
   end
-  local voucher_name = localize({
-    type = "name_text",
-    set = "Voucher",
-    key = Brainstorm.config.ar_filters.voucher_name,
-  })
+  local voucher_name = ""
+  if
+    Brainstorm.config.ar_filters.voucher_name
+    and Brainstorm.config.ar_filters.voucher_name ~= ""
+  then
+    voucher_name = localize({
+      type = "name_text",
+      set = "Voucher",
+      key = Brainstorm.config.ar_filters.voucher_name,
+    }) or ""
+  end
 
   -- Smart compatibility layer: Detect DLL version and use appropriate call
   -- Enhanced DLL (8 params) supports dual tags internally for 10-100x speedup
   -- Original DLL (7 params) requires external validation (slower)
   local result = nil
+
+  -- Debug: Log parameters before DLL call
+  if Brainstorm.debug.enabled then
+    print("[Brainstorm] DLL call parameters:")
+    print("  seed: " .. tostring(seed_found))
+    print("  voucher: " .. tostring(voucher_name))
+    print("  pack: " .. tostring(pack_name))
+    print("  tag1: " .. tostring(tag_name))
+    print("  tag2: " .. tostring(tag2_name))
+    print("  souls: " .. tostring(Brainstorm.config.ar_filters.soul_skip))
+    print(
+      "  observatory: "
+        .. tostring(Brainstorm.config.ar_filters.inst_observatory)
+    )
+    print("  perkeo: " .. tostring(Brainstorm.config.ar_filters.inst_perkeo))
+  end
 
   -- Try enhanced DLL first (8 parameters with dual tag support)
   local enhanced_success, enhanced_result = pcall(function()

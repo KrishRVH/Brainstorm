@@ -25,6 +25,9 @@ private:
     bool initialized;
     int device_id;
     
+    // Deferred initialization with timeout protection
+    bool initialize_deferred();
+    
 public:
     GPUSearcher();
     ~GPUSearcher();

@@ -11,9 +11,13 @@ print([[
 ]])
 
 local test_suites = {
+  { name = "Basic File Integrity", file = "basic_test.lua" },
   { name = "Erratic Deck Validation", file = "tests/test_erratic_deck.lua" },
   { name = "Save State Integration", file = "tests/test_save_states.lua" },
-  -- { name = "CUDA Fallback", file = "test_cuda_fallback.lua" }, -- TODO: Create this test
+  { name = "CUDA Fallback Safety", file = "test_cuda_fallback.lua" },
+  -- C++ tests require separate build/run process:
+  -- { name = "C++ Memory Safety", file = "ImmolateCPP/tests/test_memory_safety.cpp" },
+  -- { name = "C++ Critical Functions", file = "ImmolateCPP/tests/test_critical_functions.cpp" },
 }
 
 local total_passed = 0
