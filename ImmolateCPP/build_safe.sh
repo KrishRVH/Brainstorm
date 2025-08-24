@@ -13,7 +13,7 @@ x86_64-w64-mingw32-g++ -shared -O2 -std=c++17 \
     -DBUILDING_DLL \
     -DGPU_SAFE_MODE \
     -o Immolate.dll \
-    src/brainstorm_enhanced.cpp \
+    src/brainstorm.cpp \
     src/items.cpp \
     src/rng.cpp \
     src/seed.cpp \

@@ -1,20 +1,20 @@
 #pragma once
 
-#include <string>
 #include <iostream>
 #include <memory>
+#include <string>
 
 #ifdef _WIN32
-#include <windows.h>
+    #include <windows.h>
 #endif
 
 // Safe CUDA wrapper that gracefully handles initialization failures
 class SafeCudaWrapper {
-private:
+   private:
     bool cuda_available = false;
     bool init_attempted = false;
     std::string error_message;
-    
+
 #ifdef _WIN32
     HMODULE cuda_handle = nullptr;
     HMODULE cudart_handle = nullptr;
@@ -28,9 +28,9 @@ private:
     int (*cuda_set_device_ptr)(int) = nullptr;
     const char* (*cuda_get_error_string_ptr)(int) = nullptr;
 
-public:
+   public:
     SafeCudaWrapper() = default;
-    
+
     ~SafeCudaWrapper() {
 #ifdef _WIN32
         if (cuda_handle) {
@@ -53,11 +53,10 @@ public:
         // Try multiple possible paths
         const char* cuda_dlls[] = {
             "cudart64_12.dll",
-            "cudart64_11.dll", 
+            "cudart64_11.dll",
             "cudart64_10.dll",
             "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\bin\\cudart64_12.dll",
-            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.8\\bin\\cudart64_11.dll"
-        };
+            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.8\\bin\\cudart64_11.dll"};
 
         for (const auto& dll_path : cuda_dlls) {
             cudart_handle = LoadLibraryA(dll_path);
@@ -72,7 +71,8 @@ public:
         }
 
         // Load function pointers safely
-        cuda_get_device_count_ptr = (int(*)(int*))GetProcAddress(cudart_handle, "cudaGetDeviceCount");
+        cuda_get_device_count_ptr =
+            (int (*)(int*))GetProcAddress(cudart_handle, "cudaGetDeviceCount");
         if (!cuda_get_device_count_ptr) {
             error_message = "Failed to load CUDA functions. GPU acceleration disabled.";
             FreeLibrary(cudart_handle);
@@ -83,7 +83,7 @@ public:
         // Test CUDA availability
         int device_count = 0;
         int result = cuda_get_device_count_ptr(&device_count);
-        
+
         if (result != 0 || device_count == 0) {
             error_message = "No CUDA devices found. GPU acceleration disabled.";
             FreeLibrary(cudart_handle);
@@ -99,16 +99,12 @@ public:
 #endif
     }
 
-    bool is_available() const {
-        return cuda_available;
-    }
+    bool is_available() const { return cuda_available; }
 
-    const std::string& get_error() const {
-        return error_message;
-    }
+    const std::string& get_error() const { return error_message; }
 
     // Safe wrapper for CUDA operations
-    template<typename Func>
+    template <typename Func>
     bool safe_cuda_call(Func&& func, const std::string& operation) {
         if (!cuda_available) {
             return false;

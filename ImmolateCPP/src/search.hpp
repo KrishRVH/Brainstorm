@@ -10,27 +10,26 @@
 #include <atomic>
 #include <functional>
 #include <iostream>
+#include <mutex>
 #include <thread>
 #include <vector>
-#include <mutex>
-
 
 const long long BLOCK_SIZE = 1000000;
 
 class Search {
-public:
+   public:
     std::atomic<long long> seedsProcessed{0};
     std::atomic<long long> highScore{1};
     long long printDelay = 10000000;
     std::function<int(Instance)> filter;
-    std::atomic<bool> found{false}; // Atomic flag to signal when a solution is found
-    Seed foundSeed; // Store the found seed
+    std::atomic<bool> found{false};  // Atomic flag to signal when a solution is found
+    Seed foundSeed;                  // Store the found seed
     bool exitOnFind = false;
     long long startSeed;
     int numThreads;
     long long numSeeds;
     std::mutex mtx;
-    std::atomic<long long> nextBlock{0}; // Shared index for the next block to be processed
+    std::atomic<long long> nextBlock{0};  // Shared index for the next block to be processed
 
     Search(std::function<int(Instance)> f) {
         filter = f;
@@ -45,33 +44,33 @@ public:
         numThreads = t;
         numSeeds = 2318107019761;
     }
-    
+
     Search(std::function<int(Instance)> f, int t, long long n) {
-      filter = f;
-      startSeed = 0;
-      numThreads = t;
-      numSeeds = n;
+        filter = f;
+        startSeed = 0;
+        numThreads = t;
+        numSeeds = n;
     };
     Search(std::function<int(Instance)> f, std::string seed, int t, long long n) {
-      filter = f;
-      startSeed = Seed(seed).getID();
-      numThreads = t;
-      numSeeds = n;
+        filter = f;
+        startSeed = Seed(seed).getID();
+        numThreads = t;
+        numSeeds = n;
     };
 
     void searchBlock(long long start, long long end) {
         Seed s = Seed(start);
         Instance inst(s);
         for (long long i = start; i < end; ++i) {
-            if (found) return; // Exit if a solution is found
+            if (found)
+                return;  // Exit if a solution is found
             // Perform the search on the seed
             int result = filter(inst);
             if (result >= highScore) {
                 std::lock_guard<std::mutex> lock(mtx);
                 highScore = result;
                 foundSeed = s;
-                std::cout << "Found seed: " << s.tostring() << " (" << result << ")"
-                  << std::endl;
+                std::cout << "Found seed: " << s.tostring() << " (" << result << ")" << std::endl;
                 if (exitOnFind) {
                     found = true;
                     return;
@@ -92,7 +91,8 @@ public:
             threads.emplace_back([this, totalBlocks]() {
                 while (true) {
                     long long block = nextBlock.fetch_add(1);
-                    if (block >= totalBlocks) break;
+                    if (block >= totalBlocks)
+                        break;
                     long long start = block * BLOCK_SIZE + startSeed;
                     long long end = std::min(start + BLOCK_SIZE, numSeeds + startSeed);
                     searchBlock(start, end);

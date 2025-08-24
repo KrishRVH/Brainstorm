@@ -1,12 +1,12 @@
 // Kernel launcher implementation
 // This bridges the gap between the dynamic CUDA loading and actual kernel execution
 
-#include "gpu_searcher.hpp"
 #include "cuda_wrapper.hpp"
-#include <iostream>
-#include <fstream>
-#include <vector>
+#include "gpu_searcher.hpp"
 #include <cstring>
+#include <fstream>
+#include <iostream>
+#include <vector>
 
 #ifdef GPU_ENABLED
 
@@ -19,17 +19,17 @@ extern "C" {
 bool cpu_filter_seed(uint64_t seed, const FilterParams& params) {
     // This is a placeholder - in reality we'd need the full filter logic
     // For now, just do basic tag checking
-    
+
     // Convert seed to string for hashing
     char seed_str[9];
     snprintf(seed_str, sizeof(seed_str), "%08llX", seed);
-    
+
     // Simple hash function (not the real Balatro one, but for testing)
     uint32_t hash = 0;
     for (int i = 0; i < 8; i++) {
         hash = hash * 31 + seed_str[i];
     }
-    
+
     // Check tags if specified
     if (params.tag1 != -1) {
         // Simplified tag check - in reality would need full RNG simulation
@@ -38,15 +38,15 @@ bool cpu_filter_seed(uint64_t seed, const FilterParams& params) {
             return false;
         }
     }
-    
-    // Check voucher if specified  
+
+    // Check voucher if specified
     if (params.voucher != -1) {
         uint32_t voucher_val = (hash ^ 0x87654321) % 32;
         if (voucher_val != params.voucher) {
             return false;
         }
     }
-    
+
     return true;
 }
 
@@ -54,7 +54,7 @@ bool cpu_filter_seed(uint64_t seed, const FilterParams& params) {
 std::string gpu_search_batch(uint64_t start_seed, uint32_t count, const FilterParams& params) {
     const uint32_t MAX_BATCH = 10000;  // Process in chunks
     uint32_t to_process = (count < MAX_BATCH) ? count : MAX_BATCH;
-    
+
     for (uint32_t i = 0; i < to_process; i++) {
         uint64_t seed = start_seed + i;
         if (cpu_filter_seed(seed, params)) {
@@ -64,54 +64,63 @@ std::string gpu_search_batch(uint64_t start_seed, uint32_t count, const FilterPa
             return std::string(result);
         }
     }
-    
+
     return "";  // No match found
 }
 
-} // extern "C"
+}  // extern "C"
 
 // Enhanced search function that uses batching
-std::string GPUSearcher::search_enhanced(const std::string& start_seed, const FilterParams& params) {
+std::string GPUSearcher::search_enhanced(const std::string& start_seed,
+                                         const FilterParams& params) {
     if (!initialized) {
         if (!initialize_deferred()) {
             return "";
         }
     }
-    
+
     if (!initialized || !g_cuda.is_available()) {
         return "";
     }
-    
+
     // Convert start seed to numeric
     uint64_t seed_num = 0;
     for (char c : start_seed) {
         seed_num = seed_num * 26 + (c - 'A');
     }
-    
+
     // Debug output
-    FILE* debug_file = fopen("C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\gpu_debug.log", "a");
+    FILE* debug_file =
+        fopen("C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\gpu_debug.log", "a");
     if (debug_file) {
-        fprintf(debug_file, "[GPU] Starting enhanced search from seed %s (0x%llX)\n", 
-                start_seed.c_str(), seed_num);
-        fprintf(debug_file, "[GPU] Filter params: tag1=%d, tag2=%d, voucher=%d\n",
-                params.tag1, params.tag2, params.voucher);
+        fprintf(debug_file,
+                "[GPU] Starting enhanced search from seed %s (0x%llX)\n",
+                start_seed.c_str(),
+                seed_num);
+        fprintf(debug_file,
+                "[GPU] Filter params: tag1=%d, tag2=%d, voucher=%d\n",
+                params.tag1,
+                params.tag2,
+                params.voucher);
         fflush(debug_file);
         fclose(debug_file);
     }
-    
+
     // For now, use CPU simulation of GPU batch processing
     std::string result = gpu_search_batch(seed_num, 10000, params);
-    
+
     if (!result.empty()) {
         if (debug_file) {
-            debug_file = fopen("C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\gpu_debug.log", "a");
+            debug_file = fopen(
+                "C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\gpu_debug.log",
+                "a");
             fprintf(debug_file, "[GPU] Found matching seed: %s\n", result.c_str());
             fflush(debug_file);
             fclose(debug_file);
         }
     }
-    
+
     return result;
 }
 
-#endif // GPU_ENABLED
+#endif  // GPU_ENABLED

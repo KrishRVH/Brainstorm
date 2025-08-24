@@ -1,8 +1,8 @@
 #ifndef GPU_SEARCHER_HPP
 #define GPU_SEARCHER_HPP
 
-#include <string>
 #include <cstdint>
+#include <string>
 
 // Filter parameters for GPU kernel
 struct FilterParams {
@@ -16,29 +16,29 @@ struct FilterParams {
 };
 
 class GPUSearcher {
-private:
+   private:
     void* d_params;      // Device memory for parameters
     void* d_result;      // Device memory for result
     void* d_found;       // Device memory for found flag
     void* d_rng_tables;  // Device memory for RNG lookup tables
-    
+
     bool initialized;
     int device_id;
-    
+
     // Deferred initialization with timeout protection
     bool initialize_deferred();
-    
-public:
+
+   public:
     GPUSearcher();
     ~GPUSearcher();
-    
+
     // Search for matching seed using GPU
     std::string search(const std::string& start_seed, const FilterParams& params);
-    
+
     // Get GPU capabilities
     int get_compute_capability() const;
     size_t get_memory_size() const;
     int get_sm_count() const;
 };
 
-#endif // GPU_SEARCHER_HPP
+#endif  // GPU_SEARCHER_HPP

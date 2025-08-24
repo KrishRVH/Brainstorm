@@ -484,23 +484,7 @@ function Brainstorm.check_dual_tags()
   local small_blind_tag = G.GAME.round_resets.blind_tags.Small
   local big_blind_tag = G.GAME.round_resets.blind_tags.Big
 
-  -- Only log every 100th check to reduce spam and improve performance
-  if
-    Brainstorm.debug.enabled
-    and (Brainstorm.debug.dual_tag_checks or 0) % 100 == 0
-  then
-    print(
-      string_format(
-        "[Brainstorm] Checking tags - Small: %s, Big: %s (looking for %s + %s)",
-        tostring(small_blind_tag),
-        tostring(big_blind_tag),
-        tag1,
-        tag2
-      )
-    )
-  end
-
-  -- Track dual tag checks
+  -- Track dual tag checks for performance metrics
   if Brainstorm.debug.enabled then
     Brainstorm.debug.dual_tag_checks = (Brainstorm.debug.dual_tag_checks or 0)
       + 1
@@ -511,28 +495,15 @@ function Brainstorm.check_dual_tags()
   if tag1 == tag2 then
     local both_match = (small_blind_tag == tag1 and big_blind_tag == tag1)
     if both_match then
-      print("[Brainstorm] SUCCESS! Both blinds have " .. tag1)
+      log:info("Dual tag success: Both blinds have " .. tag1)
       if Brainstorm.debug.enabled then
         Brainstorm.debug.dual_tag_successes = (
           Brainstorm.debug.dual_tag_successes or 0
         ) + 1
       end
       return true
-    else
-      if
-        Brainstorm.debug.enabled
-        and Brainstorm.debug.dual_tag_checks % 100 == 0
-      then
-        print(
-          string.format(
-            "[Brainstorm] Progress: %d seeds checked for dual %s tags",
-            Brainstorm.debug.dual_tag_checks,
-            tag1
-          )
-        )
-      end
-      return false
     end
+    return false
   else
     -- Different tags: Check both are present in either order
     -- Example: Investment + Charm (order doesn't matter)
@@ -540,29 +511,15 @@ function Brainstorm.check_dual_tags()
     local has_tag2 = (small_blind_tag == tag2 or big_blind_tag == tag2)
 
     if has_tag1 and has_tag2 then
-      print("[Brainstorm] SUCCESS! Both tags found (order-agnostic)")
+      log:info("Dual tag success: Both tags found (order-agnostic)")
       if Brainstorm.debug.enabled then
         Brainstorm.debug.dual_tag_successes = (
           Brainstorm.debug.dual_tag_successes or 0
         ) + 1
       end
       return true
-    else
-      if
-        Brainstorm.debug.enabled
-        and Brainstorm.debug.dual_tag_checks % 100 == 0
-      then
-        print(
-          string.format(
-            "[Brainstorm] Progress: %d seeds checked for %s + %s",
-            Brainstorm.debug.dual_tag_checks,
-            tag1,
-            tag2
-          )
-        )
-      end
-      return false
     end
+    return false
   end
 end
 
@@ -649,14 +606,6 @@ function Brainstorm.is_valid_deck(
     -- Track highest face count
     if face_card_count > Brainstorm.debug.highest_face_count then
       Brainstorm.debug.highest_face_count = face_card_count
-      if face_card_count >= 20 then
-        print(
-          string.format(
-            "[Brainstorm] HIGH FACE COUNT: %d face cards found!",
-            face_card_count
-          )
-        )
-      end
     end
   end
 
@@ -705,19 +654,6 @@ function Brainstorm.is_valid_deck(
           or top_2_suit_percentage > Brainstorm.debug.highest_suit_ratio
         then
           Brainstorm.debug.highest_suit_ratio = top_2_suit_percentage
-          if top_2_suit_percentage >= 0.75 then
-            -- Log exceptional finds
-            print(
-              string.format(
-                "[Brainstorm] HIGH RATIO FOUND: %.1f%% (Spades:%d Hearts:%d Clubs:%d Diamonds:%d)",
-                top_2_suit_percentage * 100,
-                suit_count.Spades or 0,
-                suit_count.Hearts or 0,
-                suit_count.Clubs or 0,
-                suit_count.Diamonds or 0
-              )
-            )
-          end
         end
       end
 
@@ -849,20 +785,7 @@ function Brainstorm.print_debug_report(success)
   print("========================================")
 end
 
-function Brainstorm.print_periodic_update()
-  local elapsed = os_clock() - Brainstorm.debug.start_time
-  local seeds_per_sec = Brainstorm.debug.seeds_tested / elapsed
-
-  print(
-    string.format(
-      "[Brainstorm] Progress: %d seeds tested | %.1f seeds/sec | %d face rejections | %d ratio rejections",
-      Brainstorm.debug.seeds_tested,
-      seeds_per_sec,
-      Brainstorm.debug.rejection_reasons.face_cards,
-      Brainstorm.debug.rejection_reasons.suit_ratio
-    )
-  )
-end
+-- Performance metrics are now tracked internally and shown in debug report only
 
 -- Perform a single manual reroll
 -- Preserves stake and challenge settings
@@ -910,12 +833,8 @@ function Game:update(dt)
         Brainstorm.debug.last_report_time = os_clock()
       end
 
-      -- Print periodic updates every 5 seconds
-      if
-        Brainstorm.debug.enabled
-        and os_clock() - Brainstorm.debug.last_report_time > 5
-      then
-        Brainstorm.print_periodic_update()
+      -- Update performance metrics
+      if Brainstorm.debug.enabled then
         Brainstorm.debug.last_report_time = os_clock()
       end
 
@@ -961,17 +880,14 @@ function Game:update(dt)
           end
           local erratic_seeds_to_try = max_seeds
 
-          -- Log actual speed for debugging
+          -- Track performance metrics
           if
-            Brainstorm.debug.enabled and Brainstorm.debug.seeds_tested == 1
+            Brainstorm.debug.enabled and Brainstorm.debug.seeds_tested == 0
           then
-            print(
-              string.format(
-                "[Brainstorm] Testing %d seeds per frame (target: %d/sec)",
-                erratic_seeds_to_try,
-                Brainstorm.config.ar_prefs.spf_int
-              )
-            )
+            log:info("Starting Erratic deck search", {
+              seeds_per_frame = erratic_seeds_to_try,
+              target_speed = Brainstorm.config.ar_prefs.spf_int,
+            })
           end
 
           for i = 1, erratic_seeds_to_try do
@@ -1023,6 +939,10 @@ function Game:update(dt)
                 )
               then
                 -- Found a valid seed that meets all criteria
+                log:info("Seed found!", {
+                  seed = test_seed,
+                  seeds_tested = Brainstorm.debug.seeds_tested,
+                })
                 Brainstorm.stop_auto_reroll(true)
                 G.GAME.used_filter = true
                 G.GAME.seeded = false
@@ -1051,6 +971,10 @@ function Game:update(dt)
               local tags_valid = Brainstorm.check_dual_tags()
 
               if tags_valid then
+                log:info("Seed found!", {
+                  seed = seed_found,
+                  seeds_tested = Brainstorm.debug.seeds_tested + 1,
+                })
                 G.GAME.used_filter = true
                 G.GAME.seeded = false
                 Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested
@@ -1183,9 +1107,7 @@ function Brainstorm.auto_reroll()
     -- Check if DLL exists first
     local dll_file = io.open(dll_path, "rb")
     if not dll_file then
-      if Brainstorm.debug.enabled then
-        print("[Brainstorm] DLL not found at: " .. dll_path)
-      end
+      log:error("DLL not found", { path = dll_path })
       return nil
     end
     dll_file:close()
@@ -1193,31 +1115,32 @@ function Brainstorm.auto_reroll()
     local success
     success, immolate = pcall(ffi.load, dll_path)
     if not success then
-      print("[Brainstorm] Failed to load Immolate.dll: " .. tostring(immolate))
+      log:error("Failed to load Immolate.dll", { error = tostring(immolate) })
       return nil
     end
     immolate_dll = immolate -- Cache for future use
+    log:info("DLL loaded successfully")
 
     -- Configure GPU/CUDA support based on config
     if immolate_dll.set_use_cuda then
       local use_cuda = Brainstorm.config.use_cuda ~= false -- Default to true
       pcall(immolate_dll.set_use_cuda, use_cuda)
 
-      -- Get hardware info for debugging
+      -- Get hardware info for initialization
       if immolate_dll.get_hardware_info then
         local info_ptr = immolate_dll.get_hardware_info()
         if info_ptr ~= nil then
           local hardware_info = ffi.string(info_ptr)
-          print("[Brainstorm] Hardware: " .. hardware_info)
+          log:info("Hardware detected", { info = hardware_info })
 
           -- Check actual acceleration type
           if immolate_dll.get_acceleration_type then
             local accel_type = immolate_dll.get_acceleration_type()
             if accel_type == 1 then
-              print("[Brainstorm] GPU acceleration enabled")
+              log:info("GPU acceleration enabled")
               Brainstorm.debug.gpu_enabled = true
             else
-              print("[Brainstorm] Using CPU acceleration")
+              log:info("Using CPU acceleration")
               Brainstorm.debug.gpu_enabled = false
             end
           end
@@ -1272,20 +1195,9 @@ function Brainstorm.auto_reroll()
   -- Original DLL (7 params) requires external validation (slower)
   local result = nil
 
-  -- Debug: Log parameters before DLL call
+  -- Track DLL usage for performance metrics
   if Brainstorm.debug.enabled then
-    print("[Brainstorm] DLL call parameters:")
-    print("  seed: " .. tostring(seed_found))
-    print("  voucher: " .. tostring(voucher_name))
-    print("  pack: " .. tostring(pack_name))
-    print("  tag1: " .. tostring(tag_name))
-    print("  tag2: " .. tostring(tag2_name))
-    print("  souls: " .. tostring(Brainstorm.config.ar_filters.soul_skip))
-    print(
-      "  observatory: "
-        .. tostring(Brainstorm.config.ar_filters.inst_observatory)
-    )
-    print("  perkeo: " .. tostring(Brainstorm.config.ar_filters.inst_perkeo))
+    Brainstorm.debug.dll_calls = (Brainstorm.debug.dll_calls or 0) + 1
   end
 
   -- Try enhanced DLL first (8 parameters with dual tag support)
@@ -1305,18 +1217,23 @@ function Brainstorm.auto_reroll()
   if enhanced_success then
     -- Enhanced DLL detected and working!
     result = enhanced_result
-    if tag2_name ~= "" and Brainstorm.debug.enabled then
-      print("[Brainstorm] Using enhanced DLL for dual tag search (fast mode)")
+    if
+      tag2_name ~= ""
+      and Brainstorm.debug.enabled
+      and not Brainstorm.debug.dll_mode_logged
+    then
+      log:info("Using enhanced DLL for dual tag search")
+      Brainstorm.debug.dll_mode_logged = true
     end
   else
     -- Fall back to original DLL (7 parameters, no dual tag support)
     -- This path is slower for dual tags as it requires game restarts
-    if Brainstorm.debug.enabled then
-      print("[Brainstorm] Using original DLL (compatibility mode)")
+    if Brainstorm.debug.enabled and not Brainstorm.debug.dll_mode_logged then
+      log:warn("Using original DLL (compatibility mode)")
       if tag2_name ~= "" then
-        print("[Brainstorm] WARNING: Dual tag search will be slower")
-        print("[Brainstorm] Install enhanced DLL for 10-100x faster searches")
+        log:warn("Dual tag search will be slower - consider upgrading DLL")
       end
+      Brainstorm.debug.dll_mode_logged = true
     end
 
     -- Old DLL only checks for first tag
@@ -1335,7 +1252,7 @@ function Brainstorm.auto_reroll()
     if call_success then
       result = call_result
     else
-      print("[Brainstorm] DLL call failed: " .. tostring(call_result))
+      log:error("DLL call failed", { error = tostring(call_result) })
       return nil
     end
   end
@@ -1346,8 +1263,8 @@ function Brainstorm.auto_reroll()
   if result then
     if immolate.free_result then
       local free_success = pcall(immolate.free_result, result)
-      if not free_success and Brainstorm.debug.enabled then
-        print("[Brainstorm] Warning: Failed to free DLL result memory")
+      if not free_success then
+        log:warn("Failed to free DLL result memory")
       end
     end
   end

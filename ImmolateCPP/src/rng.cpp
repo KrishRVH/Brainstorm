@@ -56,8 +56,7 @@ const std::string RandomType::Voucher_Tag = "Voucher_fromtag";
 const std::string RandomType::Orbital_Tag = "orbital";
 const std::string RandomType::Soul = "soul_";
 const std::string RandomType::Erratic = "erratic";
-const std::string RandomType::Eternal =
-    "stake_shop_joker_eternal"; // Eternal jokers pre 1.0.1
+const std::string RandomType::Eternal = "stake_shop_joker_eternal";  // Eternal jokers pre 1.0.1
 const std::string RandomType::Perishable = "ssjp";
 const std::string RandomType::Rental = "ssjr";
 const std::string RandomType::Eternal_Perishable = "etperpoll";

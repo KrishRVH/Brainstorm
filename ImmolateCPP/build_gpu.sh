@@ -78,7 +78,7 @@ if [ "$1" == "--cpu-only" ] || [ $CUDA_AVAILABLE -eq 0 ]; then
         -std=c++17 \
         -DBUILDING_DLL \
         -o ../Immolate.dll \
-        ../src/brainstorm_enhanced.cpp \
+        ../src/brainstorm.cpp \
         ../src/items.cpp \
         ../src/rng.cpp \
         ../src/seed.cpp \
@@ -184,8 +184,8 @@ else
         -DGPU_ENABLED \
         -DGPU_DYNAMIC_LOAD \
         $INCLUDE_FLAGS \
-        -o brainstorm_unified.o \
-        ../src/brainstorm_unified.cpp \
+        -o brainstorm.o \
+        ../src/brainstorm.cpp \
         2>&1 | tee -a build_cuda.log
     
     # Step 4: Link everything into DLL with runtime CUDA loading
@@ -196,7 +196,7 @@ else
     x86_64-w64-mingw32-g++ \
         -shared \
         -o ../Immolate.dll \
-        brainstorm_unified.o \
+        brainstorm.o \
         gpu_searcher.o \
         ../src/items.cpp \
         ../src/rng.cpp \
