@@ -8,7 +8,7 @@ long BRAINSTORM_SOULS = 1;
 
 long filter(Instance inst) {
     if (BRAINSTORM_PACK != Item::RETRY) {
-        inst.cache.generatedFirstPack = true; //we don't care about Pack 1
+        inst.cache.generatedFirstPack = true;  // we don't care about Pack 1
         if (inst.nextPack(1) != BRAINSTORM_PACK) {
             return 0;
         }
@@ -20,9 +20,12 @@ long filter(Instance inst) {
     }
     if (BRAINSTORM_SOULS > 0) {
         for (int i = 1; i <= BRAINSTORM_SOULS; i++) {
-            auto tarots = inst.nextArcanaPack(5, 1); //Mega Arcana Pack, assumed
-from a Charm Tag bool found_soul = false; for (int t = 0; t < 5; t++) { if
-(tarots[t] == Item::The_Soul) { found_soul = true; break;
+            auto tarots = inst.nextArcanaPack(5, 1);  // Mega Arcana Pack, assumed
+            from a Charm Tag bool found_soul = false;
+            for (int t = 0; t < 5; t++) {
+                if (tarots[t] == Item::The_Soul) {
+                    found_soul = true;
+                    break;
                 }
             }
             if (!found_soul) {
@@ -32,8 +35,9 @@ from a Charm Tag bool found_soul = false; for (int t = 0; t < 5; t++) { if
     }
 };
 
-IMMOLATE_API std::string brainstorm_cpp(std::string seed, std::string pack,
-std::string tag, double souls) { BRAINSTORM_PACK = stringToItem(pack);
+IMMOLATE_API std::string
+brainstorm_cpp(std::string seed, std::string pack, std::string tag, double souls) {
+    BRAINSTORM_PACK = stringToItem(pack);
     BRAINSTORM_TAG = stringToItem(tag);
     BRAINSTORM_SOULS = souls;
     Search search(filter, seed, 1, 100000000);
@@ -42,18 +46,20 @@ std::string tag, double souls) { BRAINSTORM_PACK = stringToItem(pack);
 }
 
 extern "C" {
-    IMMOLATE_API const char* brainstorm(const char* seed, const char* pack,
-const char* tag, double souls) { std::string cpp_seed(seed); std::string
-cpp_pack(pack); std::string cpp_tag(tag); std::string result =
-brainstorm_cpp(cpp_seed, cpp_pack, cpp_tag, souls);
+IMMOLATE_API const char*
+brainstorm(const char* seed, const char* pack, const char* tag, double souls) {
+    std::string cpp_seed(seed);
+    std::string cpp_pack(pack);
+    std::string cpp_tag(tag);
+    std::string result = brainstorm_cpp(cpp_seed, cpp_pack, cpp_tag, souls);
 
-        char* c_result = (char*)malloc(result.length() + 1);
-        strcpy(c_result, result.c_str());
+    char* c_result = (char*)malloc(result.length() + 1);
+    strcpy(c_result, result.c_str());
 
-        return c_result;
-    }
+    return c_result;
+}
 
-    IMMOLATE_API void free_result(const char* result) {
-        free((void*)result);
-    }
+IMMOLATE_API void free_result(const char* result) {
+    free((void*)result);
+}
 }

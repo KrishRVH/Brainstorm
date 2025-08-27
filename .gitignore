@@ -15,11 +15,13 @@
 build/
 Debug/
 Release/
+release/
 x64/
 x86/
 .vs/
 *.user
 *.suo
+ImmolateCPP/build/
 
 # Test outputs
 test_rng_analyzer
@@ -33,12 +35,16 @@ tools/
 # Profiling results
 profiling_results/
 
-# Temporary files
+# Temporary files and logs
 *.tmp
 *.temp
 *.log
 *.bak
+*.backup
 *~
+brainstorm.log
+gpu_debug.log
+test_results.txt
 
 # IDE files
 .vscode/
@@ -61,6 +67,10 @@ local_config.lua
 # Test artifacts
 test_config.lua
 test_*.txt
+coverage.info
+*.gcov
+*.gcda
+*.gcno
 
 # CMake
 CMakeCache.txt
@@ -89,3 +99,14 @@ save_state_*.jkr
 # Performance logs
 perf_*.log
 benchmark_*.txt
+
+# CUDA/GPU files
+*.ptx
+*.cubin
+*.fatbin
+*.cache
+
+# Package files
+*.zip
+*.tar.gz
+*.rar
