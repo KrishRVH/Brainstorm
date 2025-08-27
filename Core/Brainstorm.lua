@@ -178,8 +178,9 @@ function Brainstorm.load_config()
   else
     local config_file, err = nfs.read(config_path)
     if not config_file then
-      print(
-        "[Brainstorm] Failed to read config file: " .. (err or "unknown error")
+      log.error(
+        "Failed to read config file",
+        { error = err or "unknown error" }
       )
       return
     end
@@ -222,8 +223,9 @@ function Brainstorm.write_config()
   if success and packed then
     local write_success, err = nfs.write(config_path, packed)
     if not write_success then
-      print(
-        "[Brainstorm] Failed to write config file: " .. (err or "unknown error")
+      log.error(
+        "Failed to write config file",
+        { error = err or "unknown error" }
       )
     end
   end
@@ -451,15 +453,15 @@ function Controller:key_press_update(key, dt)
                 "[Brainstorm] Dual tag combinations can take 5-20 seconds to find."
               )
             end
-            print(
-              "[Brainstorm] Order doesn't matter - either tag can be in either blind position."
+            log.info(
+              "Order doesn't matter - either tag can be in either blind position."
             )
           end
         end
       end) -- End of pcall
 
       if not success then
-        print("[Brainstorm] ERROR in auto-reroll toggle: " .. tostring(err))
+        log.error("ERROR in auto-reroll toggle", { error = err })
       end
     end
   end
