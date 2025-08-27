@@ -395,11 +395,20 @@ IMMOLATE_API const char* brainstorm(const char* seed,
         initialized = true;
     }
 
-    std::string cpp_seed(seed);
-    std::string cpp_voucher(voucher);
-    std::string cpp_pack(pack);
-    std::string cpp_tag1(tag1);
-    std::string cpp_tag2(tag2);
+    std::string cpp_seed(seed ? seed : "");
+    std::string cpp_voucher(voucher ? voucher : "");
+    std::string cpp_pack(pack ? pack : "");
+    std::string cpp_tag1(tag1 ? tag1 : "");
+    std::string cpp_tag2(tag2 ? tag2 : "");
+    
+    // Debug log what we received
+    fprintf(stderr, "[DLL] Converting tags:\n");
+    fprintf(stderr, "  tag1 string: '%s' -> ", cpp_tag1.c_str());
+    Item tag1_item = stringToItem(cpp_tag1);
+    fprintf(stderr, "Item value: %d\n", static_cast<int>(tag1_item));
+    fprintf(stderr, "  tag2 string: '%s' -> ", cpp_tag2.c_str());
+    Item tag2_item = stringToItem(cpp_tag2);  
+    fprintf(stderr, "Item value: %d\n", static_cast<int>(tag2_item));
 
     std::string result = brainstorm_internal(
         cpp_seed, cpp_voucher, cpp_pack, cpp_tag1, cpp_tag2, souls, observatory, perkeo);

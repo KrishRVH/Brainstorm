@@ -81,30 +81,16 @@
 #define MAX_VOUCHER_ID (NUM_VOUCHERS - 1)  // 0-31 (32 vouchers total)  
 #define MAX_PACK_ID (NUM_PACKS - 1)    // 0-14 (15 packs total)
 
-// Filter parameters structure (must match host)
-struct FilterParams {
-    uint32_t tag1;
-    uint32_t tag2;
-    uint32_t voucher;
-    uint32_t pack;
-    bool require_souls;
-    bool require_observatory;
-    bool require_perkeo;
-};
+// Include ABI-safe GPU types
+#include "gpu_types.h"
 
-// Global debug statistics (device memory)
-struct DebugStats {
-    uint64_t seeds_tested;
-    uint64_t tag_matches;
-    uint64_t voucher_matches;
-    uint64_t pack_matches;
-    uint64_t observatory_matches;
-    uint64_t total_matches;
-    uint64_t tag_rejections;
-    uint64_t voucher_rejections;
-    uint64_t pack_rejections;
-    uint64_t observatory_rejections;
-};
+// Global debug statistics (device memory) - already defined in gpu_types.h
+// Remove duplicate definition and just note the fields:
+// struct DebugStats {
+// DebugStats fields (from gpu_types.h):
+//     uint64_t seeds_tested, tag_matches, tag_rejections,
+//     voucher_matches, voucher_rejections, pack_matches, pack_rejections,
+//     observatory_matches, observatory_rejections, total_matches
 
 // Balatro's PRNG implementation ported to CUDA
 // Based on analysis of Balatro source (functions/misc_functions.lua)
@@ -316,10 +302,11 @@ __device__ uint32_t get_pack(uint64_t seed) {
 // This implements Balatro's complete seed filtering algorithm with debug instrumentation
 // Input: start_seed (first seed to test), count (number of seeds), params (filter criteria)
 // Output: result (matching seed), found (atomic flag when match found)
-__global__ void find_seeds_kernel(
+// Note: params is now passed as pointer for ABI compatibility with Driver API
+extern "C" __global__ void find_seeds_kernel(
     uint64_t start_seed,
     uint32_t count,
-    FilterParams params,
+    const FilterParams* params,
     uint64_t* result,
     volatile int* found,
     DebugStats* debug_stats
@@ -354,9 +341,9 @@ __global__ void find_seeds_kernel(
     
     // PHASE 1: TAG FILTERING (cheapest operation, check first)
     // Tags are assigned to Small (ante 1, blind 0) and Big (ante 1, blind 1) blinds
-    if (params.tag1 != RETRY_VALUE || params.tag2 != RETRY_VALUE) {
+    if (params->tag1 != RETRY_VALUE || params->tag2 != RETRY_VALUE) {
         GPU_DEBUG("[GPU] Thread %d.%d: checking tags (tag1=%u tag2=%u)\n", 
-                  blockIdx.x, tid, params.tag1, params.tag2);
+                  blockIdx.x, tid, params->tag1, params->tag2);
         
         // Get both blind tags for ante 1 (the only ones that matter for filtering)
         uint32_t small_tag = get_tag(seed, 1, 0);  // Ante 1, Small Blind
@@ -374,33 +361,33 @@ __global__ void find_seeds_kernel(
         const char* match_reason = "";  // Only needed for debug output
         #endif
         
-        if (params.tag2 == RETRY_VALUE) {
+        if (params->tag2 == RETRY_VALUE) {
             // SINGLE TAG MODE: Only checking tag1, must appear on either blind
-            tags_match = (small_tag == params.tag1 || big_tag == params.tag1);
+            tags_match = (small_tag == params->tag1 || big_tag == params->tag1);
             #if DEBUG_GPU
             match_reason = "single_tag";
             GPU_DEBUG("[GPU] Thread %d.%d: single tag mode - looking for tag %u\n", 
-                      blockIdx.x, tid, params.tag1);
+                      blockIdx.x, tid, params->tag1);
             #endif
         }
-        else if (params.tag1 == params.tag2) {
+        else if (params->tag1 == params->tag2) {
             // DUAL SAME TAG MODE: Same tag twice - both positions must have it
-            tags_match = (small_tag == params.tag1 && big_tag == params.tag1);
+            tags_match = (small_tag == params->tag1 && big_tag == params->tag1);
             #if DEBUG_GPU
             match_reason = "dual_same_tag";
             GPU_DEBUG("[GPU] Thread %d.%d: dual same tag mode - need tag %u twice\n", 
-                      blockIdx.x, tid, params.tag1);
+                      blockIdx.x, tid, params->tag1);
             #endif
         }
         else {
             // DUAL DIFFERENT TAG MODE: Two different tags - both must be present (order agnostic)
-            bool has_tag1 = (small_tag == params.tag1 || big_tag == params.tag1);
-            bool has_tag2 = (small_tag == params.tag2 || big_tag == params.tag2);
+            bool has_tag1 = (small_tag == params->tag1 || big_tag == params->tag1);
+            bool has_tag2 = (small_tag == params->tag2 || big_tag == params->tag2);
             tags_match = has_tag1 && has_tag2;
             #if DEBUG_GPU
             match_reason = "dual_different_tags";
             GPU_DEBUG("[GPU] Thread %d.%d: dual different tag mode - need tags %u and %u (has_tag1=%d has_tag2=%d)\n", 
-                      blockIdx.x, tid, params.tag1, params.tag2, has_tag1, has_tag2);
+                      blockIdx.x, tid, params->tag1, params->tag2, has_tag1, has_tag2);
             #endif
         }
         
@@ -428,13 +415,13 @@ __global__ void find_seeds_kernel(
     
     // PHASE 2: VOUCHER FILTERING
     // Check if seed generates the required first voucher in shop
-    if (params.voucher != RETRY_VALUE) {
-        GPU_DEBUG("[GPU] Thread %d.%d: checking voucher (target=%u)\n", blockIdx.x, tid, params.voucher);
-        GPU_ASSERT(params.voucher <= MAX_VOUCHER_ID, "voucher filter out of range");
+    if (params->voucher != RETRY_VALUE) {
+        GPU_DEBUG("[GPU] Thread %d.%d: checking voucher (target=%u)\n", blockIdx.x, tid, params->voucher);
+        GPU_ASSERT(params->voucher <= MAX_VOUCHER_ID, "voucher filter out of range");
         
         uint32_t first_voucher = get_voucher(seed);
         
-        if (first_voucher == params.voucher) {
+        if (first_voucher == params->voucher) {
             GPU_DEBUG("[GPU] Thread %d.%d: VOUCHER MATCH (got %u) - continuing to next phase\n", 
                       blockIdx.x, tid, first_voucher);
             if (debug_stats) {
@@ -442,7 +429,7 @@ __global__ void find_seeds_kernel(
             }
         } else {
             GPU_DEBUG("[GPU] Thread %d.%d: VOUCHER REJECTION (got %u, wanted %u) - seed failed\n", 
-                      blockIdx.x, tid, first_voucher, params.voucher);
+                      blockIdx.x, tid, first_voucher, params->voucher);
             if (debug_stats) {
                 atomicAdd((unsigned long long*)&debug_stats->voucher_rejections, 1ULL);
             }
@@ -454,13 +441,13 @@ __global__ void find_seeds_kernel(
     
     // PHASE 3: BOOSTER PACK FILTERING
     // Check if seed generates the required first booster pack in shop
-    if (params.pack != RETRY_VALUE) {
-        GPU_DEBUG("[GPU] Thread %d.%d: checking pack (target=%u)\n", blockIdx.x, tid, params.pack);
-        GPU_ASSERT(params.pack <= MAX_PACK_ID, "pack filter out of range");
+    if (params->pack != RETRY_VALUE) {
+        GPU_DEBUG("[GPU] Thread %d.%d: checking pack (target=%u)\n", blockIdx.x, tid, params->pack);
+        GPU_ASSERT(params->pack <= MAX_PACK_ID, "pack filter out of range");
         
         uint32_t first_pack = get_pack(seed);
         
-        if (first_pack == params.pack) {
+        if (first_pack == params->pack) {
             GPU_DEBUG("[GPU] Thread %d.%d: PACK MATCH (got %u) - continuing to next phase\n", 
                       blockIdx.x, tid, first_pack);
             if (debug_stats) {
@@ -468,7 +455,7 @@ __global__ void find_seeds_kernel(
             }
         } else {
             GPU_DEBUG("[GPU] Thread %d.%d: PACK REJECTION (got %u, wanted %u) - seed failed\n", 
-                      blockIdx.x, tid, first_pack, params.pack);
+                      blockIdx.x, tid, first_pack, params->pack);
             if (debug_stats) {
                 atomicAdd((unsigned long long*)&debug_stats->pack_rejections, 1ULL);
             }
@@ -480,7 +467,7 @@ __global__ void find_seeds_kernel(
     
     // PHASE 4: SPECIAL CONDITIONS
     // Observatory mode requires specific voucher+pack combination for planet generation
-    if (params.require_observatory) {
+    if (params->require_observatory) {
         GPU_DEBUG("[GPU] Thread %d.%d: checking observatory requirement\n", blockIdx.x, tid);
         
         // Get the items that were already calculated (or calculate if not done yet)
@@ -512,10 +499,10 @@ __global__ void find_seeds_kernel(
     
     // TODO: PHASE 5: SOULS AND PERKEO CONDITIONS
     // These are not yet implemented in the current version
-    if (params.require_souls) {
+    if (params->require_souls) {
         GPU_DEBUG("[GPU] Thread %d.%d: souls requirement not yet implemented - ignoring\n", blockIdx.x, tid);
     }
-    if (params.require_perkeo) {
+    if (params->require_perkeo) {
         GPU_DEBUG("[GPU] Thread %d.%d: perkeo requirement not yet implemented - ignoring\n", blockIdx.x, tid);
     }
     
@@ -580,8 +567,9 @@ extern "C" void launch_seed_search(
     }
     
     // Launch kernel with all parameters including debug stats
+    // Note: d_params is already a device pointer, pass it directly
     find_seeds_kernel<<<blocks, threads_per_block>>>(
-        start_seed, count, *d_params, d_result, d_found, d_debug_stats
+        start_seed, count, d_params, d_result, d_found, d_debug_stats
     );
     
     // Synchronize and check for kernel launch errors

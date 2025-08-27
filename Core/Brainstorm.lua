@@ -959,43 +959,39 @@ function Game:update(dt)
           end
         else
           -- No Erratic requirements, use DLL normally
-          for i = 1, seeds_to_try do
-            seed_found = Brainstorm.auto_reroll()
-            if seed_found then
-              -- Found a seed that matches DLL criteria
-              local stake = G.GAME.stake
-              local challenge = G.GAME
-                and G.GAME.challenge
-                and G.GAME.challenge_tab
-              G:delete_run()
-              G:start_run({
-                stake = stake,
-                seed = seed_found,
-                challenge = challenge,
-              })
+          -- DLL already searches many seeds internally (100K-1M), so only call once
+          seed_found = Brainstorm.auto_reroll()
+          if seed_found then
+            -- Found a seed that matches DLL criteria
+            local stake = G.GAME.stake
+            local challenge = G.GAME
+              and G.GAME.challenge
+              and G.GAME.challenge_tab
+            G:delete_run()
+            G:start_run({
+              stake = stake,
+              seed = seed_found,
+              challenge = challenge,
+            })
 
-              -- Check dual tags if configured
-              local tags_valid = Brainstorm.check_dual_tags()
+            -- Check dual tags if configured
+            local tags_valid = Brainstorm.check_dual_tags()
 
-              if tags_valid then
-                if Brainstorm.debug.enabled then
-                  log:info("Seed found!", {
-                    seed = seed_found,
-                    seeds_tested = Brainstorm.debug.seeds_tested + 1,
-                  })
-                end
-                G.GAME.used_filter = true
-                G.GAME.seeded = false
-                Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested
-                  + 1
-                Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
-                Brainstorm.stop_auto_reroll(true)
-                break
-              else
-                -- Tags don't match, continue searching
-                Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested
-                  + 1
+            if tags_valid then
+              if Brainstorm.debug.enabled then
+                log:info("Seed found!", {
+                  seed = seed_found,
+                  seeds_tested = Brainstorm.debug.seeds_tested + 1,
+                })
               end
+              G.GAME.used_filter = true
+              G.GAME.seeded = false
+              Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
+              Brainstorm.debug.seeds_found = Brainstorm.debug.seeds_found + 1
+              Brainstorm.stop_auto_reroll(true)
+            else
+              -- Tags don't match, continue searching
+              Brainstorm.debug.seeds_tested = Brainstorm.debug.seeds_tested + 1
             end
           end
         end

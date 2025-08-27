@@ -172,6 +172,15 @@ bool GPUSearcher::initialize_deferred() {
     }
 }
 
+// External function to use GPU kernel
+extern "C" std::string gpu_search_with_kernel(
+    const std::string& start_seed,
+    const FilterParams& params,
+    void* d_params,
+    uint64_t* d_result,
+    int* d_found
+);
+
 std::string GPUSearcher::search(const std::string& start_seed, const FilterParams& params) {
     // Initialize on first use if not already initialized
     if (!initialized) {
@@ -184,24 +193,15 @@ std::string GPUSearcher::search(const std::string& start_seed, const FilterParam
         return "";  // Return empty string to indicate no match found
     }
 
-    // Reset found flag
-    int zero = 0;
-    cudaError_t err = g_cuda.cudaMemcpy(d_found, &zero, sizeof(int), cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-        std::cerr << "[GPU] Failed to reset found flag" << std::endl;
-        return "";
+    // Try GPU kernel first
+    std::string result = gpu_search_with_kernel(start_seed, params, d_params, 
+                                               static_cast<uint64_t*>(d_result), 
+                                               static_cast<int*>(d_found));
+    if (!result.empty()) {
+        return result;  // Found match via GPU
     }
 
-    // Copy params to device
-    err = g_cuda.cudaMemcpy(d_params, &params, sizeof(FilterParams), cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-        std::cerr << "[GPU] Failed to copy params" << std::endl;
-        return "";
-    }
-
-    // Implement CPU-based parallel search using actual Balatro RNG
-    // This provides GPU-like performance until we can properly link CUDA kernels
-
+    // If GPU didn't find a match or failed, use CPU fallback
     // Convert seed string to Seed object for iteration
     Seed current_seed(start_seed);
 

@@ -36,8 +36,8 @@ if [ -f "Immolate.dll" ]; then
     cp "Immolate.dll" "$TARGET/Immolate.dll"
     
     # Check DLL size to determine if GPU support is included
-    DLL_SIZE_NUM=$(echo "$DLL_SIZE" | sed 's/[^0-9.]//g')
-    if [[ "$DLL_SIZE" == *"M"* ]] && (( $(echo "$DLL_SIZE_NUM > 2.4" | bc -l) )); then
+    # Always deploy GPU files if they exist (regardless of size)
+    if [ -f "seed_filter.ptx" ] || [ -f "gpu_worker.exe" ]; then
         echo -e "${GREEN}✓${NC} Deployed enhanced DLL with GPU support (${DLL_SIZE})"
         
         # Also deploy PTX files if they exist
@@ -48,6 +48,12 @@ if [ -f "Immolate.dll" ]; then
         if [ -f "seed_filter.fatbin" ]; then
             cp "seed_filter.fatbin" "$TARGET/seed_filter.fatbin"
             echo -e "${GREEN}✓${NC} Deployed CUDA kernel (fatbin)"
+        fi
+        
+        # Deploy GPU worker process if it exists
+        if [ -f "gpu_worker.exe" ]; then
+            cp "gpu_worker.exe" "$TARGET/gpu_worker.exe"
+            echo -e "${GREEN}✓${NC} Deployed GPU worker process"
         fi
     else
         echo -e "${GREEN}✓${NC} Deployed CPU-only DLL (${DLL_SIZE})"

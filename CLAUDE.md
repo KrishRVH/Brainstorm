@@ -174,7 +174,80 @@ end
 
 ## Testing
 
-### Run All Tests
+### ⚠️ CRITICAL: Pre-Deployment Testing Protocol
+
+**ALWAYS validate BEFORE deploying to avoid crashes in Balatro!**
+
+```bash
+# Quick validation - catches most issues
+./validate.sh
+
+# If validation passes, safe to deploy
+./deploy.sh
+```
+
+### Testing Hierarchy (Most Important First)
+
+#### 1. Pre-Deployment Validation (MANDATORY)
+```bash
+./validate.sh
+```
+This script runs ALL critical tests:
+- DLL integrity check
+- Lua syntax validation
+- Code formatting check
+- C++ DLL crash testing (with Wine if available)
+- LuaJIT FFI testing (same as Balatro uses)
+- GPU driver error detection
+- Basic functionality tests
+
+**NEVER skip validation!** It catches crashes before they hit Balatro.
+
+#### 2. Standalone DLL Testing (No Balatro Required)
+
+**C++ Test Harness** - Catches segfaults and exceptions:
+```bash
+# Compile test harness
+x86_64-w64-mingw32-g++ -o test_dll.exe test_dll.cpp -static
+
+# Run under Wine (Linux/WSL)
+wine test_dll.exe Immolate.dll
+
+# Or on Windows directly
+test_dll.exe Immolate.dll
+```
+
+Tests:
+- All DLL exports present
+- GPU initialization without crash
+- Memory leak detection
+- Invalid parameter handling
+- Rapid successive calls
+
+**LuaJIT FFI Test** - Tests exact Balatro interface:
+```bash
+# Requires LuaJIT (same as Balatro)
+luajit test_ffi.lua
+
+# Or specify DLL path
+luajit test_ffi.lua ./ImmolateCPP/Immolate.dll
+```
+
+Tests:
+- FFI function signatures
+- CUDA context management
+- Tag filtering logic
+- Memory management (free_result)
+- Stress testing (1000+ calls)
+
+#### 3. Component Tests
+
+**Basic Tests** (no LuaJIT needed):
+```bash
+lua basic_test.lua
+```
+
+**Full Test Suite** (requires LuaJIT):
 ```bash
 lua run_tests.lua
 ```
@@ -183,6 +256,38 @@ Test suites:
 - Erratic deck validation (edge cases, boundaries)
 - Save state integration (compression, integrity)
 - CUDA fallback (GPU detection, CPU fallback)
+
+### Debugging Crashes
+
+When a crash occurs:
+
+1. **Check logs first**:
+```bash
+# GPU driver errors
+tail -50 gpu_driver.log
+
+# Brainstorm mod logs
+tail -50 brainstorm.log
+
+# Balatro crash dump
+cat %AppData%/Roaming/Balatro/Mods/lovely/log
+```
+
+2. **Test in isolation**:
+```bash
+# Test just the DLL
+wine test_dll.exe Immolate.dll
+
+# Test with FFI
+luajit test_ffi.lua
+```
+
+3. **Common crash causes**:
+- **CUDA context lost**: Context not set current before operations
+- **Memory corruption**: Not freeing DLL-allocated strings
+- **Stack overflow**: Infinite recursion in Lua
+- **Access violation**: Null pointer in C++
+- **FFI mismatch**: Wrong function signature
 
 ### Analyze Logs
 ```bash
@@ -194,6 +299,65 @@ Detects:
 - Memory leaks
 - Hot code paths
 - Error patterns
+
+### Test-Driven Development Workflow
+
+1. **Before making changes**:
+   ```bash
+   ./validate.sh  # Ensure baseline is good
+   ```
+
+2. **After code changes**:
+   ```bash
+   stylua .       # Format code
+   ./validate.sh  # Test everything
+   ```
+
+3. **Before deployment**:
+   ```bash
+   ./validate.sh  # Final validation
+   ./deploy.sh    # Only if validation passes
+   ```
+
+### Creating New Tests
+
+Add tests to `test_dll.cpp` for C++ crashes:
+```cpp
+if (test_dll_function(dll, "Your test name", [&]() {
+    // Test code that might crash
+    const char* result = brainstorm(...);
+    // Assertions and checks
+})) tests_passed++; else tests_failed++;
+```
+
+Add tests to `test_ffi.lua` for Lua/FFI issues:
+```lua
+if test("Your test name", function()
+    local result = immolate.brainstorm(...)
+    -- Assertions and checks
+end) then
+    tests_passed = tests_passed + 1
+else
+    tests_failed = tests_failed + 1
+end
+```
+
+### Continuous Integration
+
+For automated testing, run in CI/CD:
+```bash
+#!/bin/bash
+set -e  # Exit on any failure
+
+# Build
+cd ImmolateCPP && ./build_driver.sh && cd ..
+
+# Validate
+./validate.sh || exit 1
+
+# Package for release if validation passed
+zip -r Brainstorm_v3.0.zip Core UI *.lua *.dll *.md
+```
 
 ## Common Tasks
 

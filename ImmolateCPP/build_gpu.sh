@@ -168,9 +168,23 @@ else
         -O3 \
         -std=c++17 \
         -DGPU_ENABLED \
+        -DBRAINSTORM_DEBUG \
         $INCLUDE_FLAGS \
         -o gpu_searcher.o \
         ../src/gpu/gpu_searcher_dynamic.cpp \
+        2>&1 | tee -a build_cuda.log
+    
+    # Step 2b: Compile GPU kernel wrapper
+    echo "Step 2b: Compiling GPU kernel wrapper..."
+    x86_64-w64-mingw32-g++ \
+        -c \
+        -O3 \
+        -std=c++17 \
+        -DGPU_ENABLED \
+        -DBRAINSTORM_DEBUG \
+        $INCLUDE_FLAGS \
+        -o gpu_kernel.o \
+        ../src/gpu/gpu_searcher_kernel.cpp \
         2>&1 | tee -a build_cuda.log
     
     # Step 3: Compile unified brainstorm
@@ -188,16 +202,17 @@ else
         ../src/brainstorm.cpp \
         2>&1 | tee -a build_cuda.log
     
-    # Step 4: Link everything into DLL with runtime CUDA loading
-    echo "Step 4: Linking unified DLL with dynamic CUDA loading..."
+    # Step 4: Link everything into DLL with CUDA kernel
+    echo "Step 4: Linking unified DLL with CUDA kernel..."
     
-    # For Windows cross-compilation, we'll load CUDA dynamically
-    # So we don't link against CUDA libraries directly
+    # Link with the CUDA object file for actual GPU kernel
     x86_64-w64-mingw32-g++ \
         -shared \
         -o ../Immolate.dll \
         brainstorm.o \
         gpu_searcher.o \
+        gpu_kernel.o \
+        seed_filter.o \
         ../src/items.cpp \
         ../src/rng.cpp \
         ../src/seed.cpp \
