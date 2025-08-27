@@ -1,6 +1,10 @@
-// GPU Kernel Driver Bridge using CUDA Driver API
-// This file provides the bridge between the host DLL and the CUDA kernel
-// using the Driver API for runtime PTX loading
+/*
+ * GPU Kernel Driver Bridge
+ * 
+ * Provides CUDA Driver API integration for GPU-accelerated seed searching.
+ * Uses runtime PTX compilation for maximum compatibility.
+ * Features automatic context management and error recovery.
+ */
 
 #include "cuda_driver_loader.h"
 #include "gpu_types.h"
@@ -22,7 +26,10 @@ static CUfunction fn = nullptr;
 static CUcontext ctx = nullptr;
 static bool ready = false;
 
-// RAII helper for robust context management
+/* 
+ * ScopedCtx - RAII wrapper for CUDA context management
+ * Ensures context is current for the lifetime of the object
+ */
 struct ScopedCtx {
     CudaDrv& drv;
     CUcontext ctx;
@@ -89,9 +96,9 @@ static bool ensure_module_loaded() {
     d_found = 0;
     d_debug_stats = 0;
     
-    // Open debug log
-    FILE* debug_file = fopen("C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\gpu_driver.log", "a");
-    drv.debug_file = debug_file;
+    // Debug logging disabled for production
+    FILE* debug_file = nullptr;
+    drv.debug_file = nullptr;
     
     if (debug_file) {
         auto now = std::chrono::high_resolution_clock::now();
@@ -382,7 +389,7 @@ extern "C" void launch_seed_search_driver(
         return;
     }
     
-    FILE* debug_file = fopen("C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\gpu_driver.log", "a");
+    FILE* debug_file = nullptr; // Debug logging disabled for production
     
     // Use ScopedCtx for automatic push/pop
     ScopedCtx scoped(drv, ctx);
@@ -569,7 +576,7 @@ extern "C" std::string gpu_search_with_driver(
     const std::string& start_seed_str,
     const FilterParams& params
 ) {
-    FILE* debug_file = fopen("C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\gpu_driver.log", "a");
+    FILE* debug_file = nullptr; // Debug logging disabled for production
     if (debug_file) {
         fprintf(debug_file, "\n[gpu_search_with_driver] ENTRY\n");
         fprintf(debug_file, "[gpu_search_with_driver] Seed: %s\n", start_seed_str.c_str());
@@ -618,7 +625,7 @@ extern "C" std::string gpu_search_with_driver(
         }
     } catch (...) {
         // Catch any exceptions and log them
-        FILE* debug_file = fopen("C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\gpu_driver.log", "a");
+        FILE* debug_file = nullptr; // Debug logging disabled for production
         if (debug_file) {
             fprintf(debug_file, "[CUDA Driver] Exception caught in gpu_search_with_driver\n");
             fclose(debug_file);

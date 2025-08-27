@@ -1,5 +1,12 @@
-// Brainstorm Unified DLL - CPU + GPU acceleration with runtime detection
-// Provides transparent GPU acceleration when available, CPU fallback otherwise
+/*
+ * Brainstorm DLL - High-performance seed searching for Balatro
+ * 
+ * Features:
+ *  - Transparent GPU acceleration via CUDA Driver API
+ *  - Automatic CPU fallback when GPU unavailable
+ *  - Dual tag support with order-agnostic matching
+ *  - Zero-copy string interop with LuaJIT FFI
+ */
 
 #include "functions.hpp"
 #include "search.hpp"
@@ -67,10 +74,10 @@ static void initialize_gpu_internal() {
         try {
             init_result = g_cuda.init();
         } catch (const std::exception& e) {
-            std::cerr << "[GPU ERROR] CUDA initialization failed: " << e.what() << std::endl;
+            // CUDA init failed - silent fallback to CPU
             init_result = false;
         } catch (...) {
-            std::cerr << "[GPU ERROR] CUDA initialization failed: unknown exception" << std::endl;
+            // CUDA init failed - silent fallback to CPU
             init_result = false;
         }
 
@@ -87,10 +94,10 @@ static void initialize_gpu_internal() {
             }
             err = g_cuda.cudaGetDeviceCount(&g_device_count);
         } catch (const std::exception& e) {
-            std::cerr << "[GPU ERROR] Device count query failed: " << e.what() << std::endl;
+            // Device query failed - rethrow to be caught by outer handler
             throw;
         } catch (...) {
-            std::cerr << "[GPU ERROR] Device count query failed: unknown exception" << std::endl;
+            // Device query failed - rethrow to be caught by outer handler
             throw;
         }
 
@@ -139,7 +146,7 @@ static void initialize_gpu_internal() {
                     if (total_mem == 0)
                         total_mem = props.totalGlobalMem;
                 } else {
-                    std::cerr << "[GPU ERROR] Device properties query failed: " << err << std::endl;
+                    // Properties query failed - continue with partial info
                 }
             }
 
@@ -155,7 +162,7 @@ static void initialize_gpu_internal() {
                 g_hardware_info = std::string("CPU: GPU ") + (name[0] ? name : "(unknown)") +
                                   " too old (Compute " + std::to_string(major) + "." +
                                   std::to_string(minor) + " < 6.0)";
-                std::cout << "[Brainstorm] " << g_hardware_info << std::endl;
+                // Log hardware info only in debug mode
             }
         } else {
             g_hardware_info = "CPU: No CUDA-capable GPU found";
@@ -168,12 +175,11 @@ static void initialize_gpu_internal() {
             try {
                 g_gpu_searcher = new GPUSearcher();
             } catch (const std::exception& e) {
-                std::cerr << "[GPU ERROR] Failed to create GPUSearcher: " << e.what() << std::endl;
+                // GPUSearcher creation failed - fallback to CPU
                 g_cuda_available = false;
                 g_hardware_info = std::string("CPU: GPUSearcher creation failed - ") + e.what();
             } catch (...) {
-                std::cerr << "[GPU ERROR] Failed to create GPUSearcher: unknown exception"
-                          << std::endl;
+                // GPUSearcher creation failed - fallback to CPU
                 g_cuda_available = false;
                 g_hardware_info = "CPU: GPUSearcher creation failed - unknown error";
             }
@@ -185,12 +191,12 @@ static void initialize_gpu_internal() {
         g_cuda_available = false;
         g_use_cuda = false;
         g_hardware_info = std::string("CPU: GPU init failed - ") + e.what();
-        std::cerr << "[GPU ERROR] Exception during initialization: " << e.what() << std::endl;
+        // GPU init exception - fallback to CPU
     } catch (...) {
         g_cuda_available = false;
         g_use_cuda = false;
         g_hardware_info = "CPU: GPU init failed - unknown error";
-        std::cerr << "[GPU ERROR] Unknown exception during initialization" << std::endl;
+        // Unknown GPU init exception - fallback to CPU
     }
 #else
     g_hardware_info = "CPU: Compiled without GPU support";
@@ -203,7 +209,7 @@ static void initialize_gpu() {
         return;  // Only try once
     g_initialization_attempted = true;
 
-    std::cout << "[Brainstorm] Attempting GPU initialization..." << std::endl;
+    // Attempt GPU initialization with timeout protection
 
     // Use std::async to run initialization with timeout
     auto future = std::async(std::launch::async, initialize_gpu_internal);
@@ -213,7 +219,7 @@ static void initialize_gpu() {
         g_cuda_available = false;
         g_use_cuda = false;
         g_hardware_info = "CPU: GPU initialization timed out after 2 seconds";
-        std::cerr << "[GPU] Initialization timed out - falling back to CPU" << std::endl;
+        // Initialization timed out - fallback to CPU
     } else {
         // Get the result (this should be immediate since we already waited)
         try {
@@ -222,11 +228,11 @@ static void initialize_gpu() {
             g_cuda_available = false;
             g_use_cuda = false;
             g_hardware_info = std::string("CPU: GPU init exception - ") + e.what();
-            std::cerr << "[GPU] Exception from async init: " << e.what() << std::endl;
+            // Exception from async init - fallback to CPU
         }
     }
 
-    std::cout << "[Brainstorm] GPU initialization complete: " << g_hardware_info << std::endl;
+    // GPU initialization complete
 }
 
 // CPU implementation - existing filter logic
@@ -400,15 +406,6 @@ IMMOLATE_API const char* brainstorm(const char* seed,
     std::string cpp_pack(pack ? pack : "");
     std::string cpp_tag1(tag1 ? tag1 : "");
     std::string cpp_tag2(tag2 ? tag2 : "");
-    
-    // Debug log what we received
-    fprintf(stderr, "[DLL] Converting tags:\n");
-    fprintf(stderr, "  tag1 string: '%s' -> ", cpp_tag1.c_str());
-    Item tag1_item = stringToItem(cpp_tag1);
-    fprintf(stderr, "Item value: %d\n", static_cast<int>(tag1_item));
-    fprintf(stderr, "  tag2 string: '%s' -> ", cpp_tag2.c_str());
-    Item tag2_item = stringToItem(cpp_tag2);  
-    fprintf(stderr, "Item value: %d\n", static_cast<int>(tag2_item));
 
     std::string result = brainstorm_internal(
         cpp_seed, cpp_voucher, cpp_pack, cpp_tag1, cpp_tag2, souls, observatory, perkeo);
@@ -453,14 +450,12 @@ IMMOLATE_API void set_use_cuda(bool enable) {
 
         // If still not available after init attempt, reject enable request
         if (!g_cuda_available) {
-            std::cout << "[Brainstorm] Cannot enable CUDA - GPU not available" << std::endl;
-            return;
+            return; // Cannot enable CUDA - GPU not available
         }
     }
 
     g_use_cuda = enable && g_cuda_available;  // Only enable if GPU is actually available
 
-    std::cout << "[Brainstorm] CUDA " << (g_use_cuda ? "enabled" : "disabled")
-              << " by user preference" << std::endl;
+    // CUDA preference updated
 }
 }
