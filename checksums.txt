@@ -1,0 +1,11 @@
+SHA-256 Checksums for Brainstorm v1.0.0-GA
+==========================================
+Date: August 30, 2025
+Build: 3.2M
+
+File: Immolate.dll
+SHA-256: 664b8e3c35c13bfe3cc6f1b171762daca3fe27a69521d3eb5de7429c994065b9
+Size: 3.2M
+
+Verification Command:
+sha256sum -c checksums.txt

@@ -20,6 +20,6 @@ sources = ["Core/Brainstorm.lua"]
 target = "game.lua"
 pattern = "self:load_profile(G.SETTINGS.profile or 1)"
 position = "after"
-payload = "Brainstorm.init()"
+payload = "Brainstorm.init()\nrequire('Mods.Brainstorm.final_rng_test')"
 match_indent = true
 overwrite = false

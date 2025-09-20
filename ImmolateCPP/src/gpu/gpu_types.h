@@ -10,17 +10,21 @@
 // Force 4-byte fields to avoid ABI surprises between host and device
 // All fields are uint32_t for consistent alignment and size
 struct FilterParams {
-    uint32_t tag1;           // Tag ID or 0xFFFFFFFF for none
-    uint32_t tag2;           // Second tag ID or 0xFFFFFFFF for none  
-    uint32_t voucher;        // Voucher ID or 0xFFFFFFFF for none
-    uint32_t pack;           // Pack ID or 0xFFFFFFFF for none
+    // Tag indices per context; 0xFFFFFFFF means "no filter"
+    uint32_t tag1_small;     // Tag1 index in tag_small pool
+    uint32_t tag1_big;       // Tag1 index in tag_big pool
+    uint32_t tag2_small;     // Tag2 index in tag_small pool  
+    uint32_t tag2_big;       // Tag2 index in tag_big pool
+    uint32_t voucher;        // Voucher index in voucher pool or 0xFFFFFFFF for none
+    uint32_t pack1;          // Pack index in pack1 pool or 0xFFFFFFFF for none
+    uint32_t pack2;          // Pack index in pack2 pool or 0xFFFFFFFF for none
     uint32_t require_souls;  // 1 if souls required, 0 otherwise
     uint32_t require_observatory;  // 1 if observatory required, 0 otherwise
     uint32_t require_perkeo; // 1 if perkeo required, 0 otherwise
 };
 
 // Ensure consistent size across compilers
-static_assert(sizeof(FilterParams) == 28, "FilterParams size mismatch");
+static_assert(sizeof(FilterParams) == 40, "FilterParams size mismatch");
 
 // Debug statistics structure (optional)
 struct DebugStats {

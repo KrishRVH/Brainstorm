@@ -3,6 +3,9 @@
 -- Author: Community Edition v3.0
 -- License: MIT
 
+-- Initialize Brainstorm table first
+Brainstorm = {}
+
 local lovely = require("lovely")
 local nfs = require("nativefs")
 local ffi = require("ffi")
@@ -10,6 +13,121 @@ local ffi = require("ffi")
 -- Initialize logging system
 local logger_ok, logger = pcall(require, "Core.logger")
 local log
+
+-- Initialize RNG tracing for debugging
+local rng_trace_ok, RNGTrace = pcall(require, "Core.rng_trace")
+if rng_trace_ok then
+  -- Will be activated when needed for debugging
+  Brainstorm.RNGTrace = RNGTrace
+end
+
+-- Initialize automatic RNG logger for shop generation
+local rng_logger_ok, RNGLogger = pcall(require, "Core.rng_logger")
+if rng_logger_ok then
+  Brainstorm.RNGLogger = RNGLogger
+  -- Automatically install hooks when mod loads
+  RNGLogger.install()
+  print("[Brainstorm] RNG Logger installed - will capture shop RNG values")
+end
+
+-- Load manual capture module
+local manual_capture_ok, ManualCapture = pcall(require, "Core.manual_capture")
+if manual_capture_ok then
+  Brainstorm.ManualCapture = ManualCapture
+  print("[Brainstorm] Manual capture module loaded - use capture_rng() in console")
+end
+
+-- Add console functions to Brainstorm table
+Brainstorm.test_basic = function()
+    print("===== BASIC TEST =====")
+    print("This function works!")
+    if G and G.GAME then
+        print("Game is loaded: YES")
+        if G.GAME.pseudorandom then
+            print("Current seed: " .. tostring(G.GAME.pseudorandom.seed))
+        end
+    else
+        print("Game is loaded: NO")
+    end
+    return true
+end
+
+Brainstorm.test_rng_simple = function()
+    print("===== RNG TEST =====")
+    if not pseudohash then
+        print("ERROR: pseudohash not found")
+        return false
+    end
+    
+    local result = pseudohash("AAAAAAAA")
+    print(string.format("pseudohash('AAAAAAAA') = %.17g", result))
+    print("Expected: 0.43257138351543745")
+    
+    if pseudoseed and G and G.GAME and G.GAME.pseudorandom then
+        local old_state = {}
+        for k, v in pairs(G.GAME.pseudorandom) do
+            old_state[k] = v
+        end
+        
+        G.GAME.pseudorandom = {seed = "AAAAAAAA", hashed = result}
+        local seed_result = pseudoseed("Voucher")
+        print(string.format("pseudoseed('Voucher') = %.17g", seed_result))
+        print("Expected: 0.46530388624939389")
+        
+        G.GAME.pseudorandom = old_state
+    end
+    
+    return true
+end
+
+_G.trace_to_console = function()
+    print("===== TRACING TO CONSOLE =====")
+    
+    if not G or not G.GAME or not G.GAME.pseudorandom then
+        print("ERROR: Game not initialized")
+        return false
+    end
+    
+    local test_seeds = {"AAAAAAAA", "00000000", "7NTPKW6P"}
+    
+    for _, seed in ipairs(test_seeds) do
+        print("\n--- Testing seed: " .. seed .. " ---")
+        
+        -- Save state
+        local old_state = {}
+        for k, v in pairs(G.GAME.pseudorandom) do
+            old_state[k] = v
+        end
+        
+        -- Set test seed
+        local hashed = pseudohash(seed)
+        G.GAME.pseudorandom = {seed = seed, hashed = hashed}
+        
+        print(string.format("  hashed = %.17g", hashed))
+        
+        -- Test RNG calls
+        local v = pseudoseed("Voucher")
+        print(string.format("  pseudoseed('Voucher') = %.17g", v))
+        
+        local p1 = pseudoseed("shop_pack1")
+        print(string.format("  pseudoseed('shop_pack1') = %.17g", p1))
+        
+        local p2 = pseudoseed("shop_pack1")
+        print(string.format("  pseudoseed('shop_pack1') #2 = %.17g", p2))
+        
+        local ts = pseudoseed("Tag_small")
+        print(string.format("  pseudoseed('Tag_small') = %.17g", ts))
+        
+        local tb = pseudoseed("Tag_big")
+        print(string.format("  pseudoseed('Tag_big') = %.17g", tb))
+        
+        -- Restore state
+        G.GAME.pseudorandom = old_state
+    end
+    
+    print("\n===== TRACE COMPLETE =====")
+    return true
+end
 if logger_ok then
   log = logger.for_module("Brainstorm")
 else
@@ -36,10 +154,104 @@ else
   }
 end
 
-Brainstorm = {}
+-- Brainstorm table already initialized at top of file
 
 -- Mod version
 Brainstorm.VERSION = "Brainstorm v3.0.0"
+
+-- ============================================================================
+-- DEBUG LOGGING SYSTEM
+-- ============================================================================
+
+Brainstorm.debug_log = function(module, format, ...)
+  if not Brainstorm.config or not Brainstorm.config.debug_enabled then
+    return
+  end
+  
+  -- Capture varargs before pcall (can't use ... inside nested function)
+  local args = {...}
+  
+  local ok, msg = pcall(function()
+    local timestamp = os.date("%H:%M:%S")
+    local message = string.format(format, unpack(args))
+    local full = string.format("[%s] [%-12s] %s", timestamp, module, message)
+    
+    -- Console (game log)
+    print(full)
+    
+    -- Primary path
+    local path1 = (Brainstorm.PATH or ".") .. "/debug_full.log"
+    local f1 = io.open(path1, "a")
+    if f1 then 
+      f1:write(full .. "\n")
+      f1:close()
+    end
+    
+    -- Secondary path (Windows Roaming)
+    local appdata = os.getenv("APPDATA")
+    if appdata then
+      local path2 = appdata .. "\\Balatro\\Mods\\Brainstorm\\debug_full.log"
+      local f2 = io.open(path2, "a")
+      if f2 then 
+        f2:write(full .. "\n")
+        f2:close()
+      end
+    end
+  end)
+  
+  if not ok then
+    -- Last-ditch: console error
+    print(string.format("[DEBUG_LOG_FAIL] %s", tostring(msg)))
+  end
+end
+
+Brainstorm.debug_hex = function(module, label, data)
+  if not Brainstorm.config or not Brainstorm.config.debug_enabled then
+    return
+  end
+  
+  Brainstorm.debug_log(module, "%s (%d bytes):", label, #data)
+  local hex = ""
+  for i = 1, #data do
+    hex = hex .. string.format("%02x ", string.byte(data, i))
+    if i % 16 == 0 then
+      Brainstorm.debug_log(module, "  %s", hex)
+      hex = ""
+    end
+  end
+  if hex ~= "" then
+    Brainstorm.debug_log(module, "  %s", hex)
+  end
+end
+
+Brainstorm.debug_assert = function(module, name, expected, actual)
+  if not Brainstorm.config or not Brainstorm.config.debug_enabled then
+    return
+  end
+  
+  if expected ~= actual then
+    Brainstorm.debug_log(module, "ASSERTION FAILED: %s - expected %s, got %s",
+                         name, tostring(expected), tostring(actual))
+  else
+    Brainstorm.debug_log(module, "Assertion passed: %s = %s", name, tostring(actual))
+  end
+end
+
+Brainstorm.debug_timer = function(module, operation)
+  if not Brainstorm.config or not Brainstorm.config.debug_enabled then
+    return { stop = function() end }
+  end
+  
+  local start_time = os.clock()
+  Brainstorm.debug_log(module, "Starting: %s", operation)
+  
+  return {
+    stop = function()
+      local elapsed = (os.clock() - start_time) * 1000  -- Convert to ms
+      Brainstorm.debug_log(module, "Completed: %s (took %.2f ms)", operation, elapsed)
+    end
+  }
+end
 
 -- Reserved for Steammodded compatibility
 Brainstorm.SMODS = nil
@@ -76,7 +288,7 @@ Brainstorm.config = {
     suit_ratio_percent = "Disabled",
     suit_ratio_decimal = 0,
   },
-  debug_enabled = true,
+  debug_enabled = true,  -- ENABLE COMPREHENSIVE DEBUG LOGGING
 }
 
 -- Auto-reroll state management
@@ -98,6 +310,8 @@ Brainstorm.debug = {
     suit_ratio = 0, -- Suit distribution too even
     dll_filter = 0, -- Failed DLL criteria
   },
+  log_file = nil, -- Debug log file handle
+  log_path = "C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\lua_debug.log",
   distributions = { -- Statistical distributions found
     face_cards = {}, -- Histogram of face card counts
     suit_ratios = {}, -- Histogram of suit ratios
@@ -123,6 +337,91 @@ Brainstorm.FACE_CARDS = {
   ["Jack"] = true,
   ["Queen"] = true,
   ["King"] = true,
+}
+
+-- Map internal keys to DLL-expected names (must match stringToItem in DLL)
+Brainstorm.TAG_TO_DLL = {
+  ["tag_charm"] = "Charm Tag",
+  ["tag_double"] = "Double Tag",
+  ["tag_investment"] = "Investment Tag",
+  ["tag_voucher"] = "Voucher Tag",
+  ["tag_boss"] = "Boss Tag",
+  ["tag_juggle"] = "Juggle Tag",
+  ["tag_coupon"] = "Coupon Tag",
+  ["tag_economy"] = "Economy Tag",
+  ["tag_uncommon"] = "Uncommon Tag",
+  ["tag_rare"] = "Rare Tag",
+  ["tag_negative"] = "Negative Tag",
+  ["tag_foil"] = "Foil Tag",
+  ["tag_holo"] = "Holographic Tag",
+  ["tag_poly"] = "Polychrome Tag",
+  ["tag_buffoon"] = "Buffoon Tag",
+  ["tag_handy"] = "Handy Tag",
+  ["tag_garbage"] = "Garbage Tag",
+  ["tag_ethereal"] = "Ethereal Tag",
+  ["tag_standard"] = "Standard Tag",
+  ["tag_top_up"] = "Top-up Tag",
+  ["tag_d_six"] = "D6 Tag",
+  ["tag_orbital"] = "Orbital Tag",
+  ["tag_meteor"] = "Meteor Tag",
+  ["tag_skip"] = "Speed Tag",
+}
+
+Brainstorm.VOUCHER_TO_DLL = {
+  ["v_overstock_norm"] = "Overstock",
+  ["v_clearance_sale"] = "Clearance Sale",
+  ["v_hone"] = "Hone",
+  ["v_reroll_surplus"] = "Reroll Surplus",
+  ["v_crystal_ball"] = "Crystal Ball",
+  ["v_telescope"] = "Telescope",
+  ["v_grabber"] = "Grabber",
+  ["v_wasteful"] = "Wasteful",
+  ["v_tarot_merchant"] = "Tarot Merchant",
+  ["v_planet_merchant"] = "Planet Merchant",
+  ["v_seed_money"] = "Seed Money",
+  ["v_blank"] = "Blank",
+  ["v_magic_trick"] = "Magic Trick",
+  ["v_hieroglyph"] = "Hieroglyph",
+  ["v_directors_cut"] = "Directors Cut",
+  ["v_retcon"] = "Retcon",
+  ["v_paint_brush"] = "Paint Brush",
+  ["v_overstock_plus"] = "Overstock Plus",
+  ["v_liquidation"] = "Liquidation",
+  ["v_glow_up"] = "Glow Up",
+  ["v_reroll_glut"] = "Reroll Glut",
+  ["v_omen_globe"] = "Omen Globe",
+  ["v_observatory"] = "Observatory",
+  ["v_nacho_tong"] = "Nacho Tong",
+  ["v_recyclomancy"] = "Recyclomancy",
+  ["v_money_tree"] = "Money Tree",
+  ["v_antimatter"] = "Antimatter",
+  ["v_illusion"] = "Illusion",
+  ["v_petroglyph"] = "Petroglyph",
+  ["v_curator"] = "Curator",
+}
+
+-- Mapping from pack keys to DLL-expected names
+Brainstorm.PACK_TO_DLL = {
+  ["p_arcana"] = "Arcana Pack",
+  ["p_arcana_normal"] = "Arcana Pack",
+  ["p_arcana_jumbo"] = "Jumbo Arcana Pack",
+  ["p_arcana_mega"] = "Mega Arcana Pack",
+  ["p_celestial"] = "Celestial Pack",
+  ["p_celestial_normal"] = "Celestial Pack",
+  ["p_celestial_jumbo"] = "Jumbo Celestial Pack",
+  ["p_celestial_mega"] = "Mega Celestial Pack",
+  ["p_standard"] = "Standard Pack",
+  ["p_standard_normal"] = "Standard Pack",
+  ["p_standard_jumbo"] = "Jumbo Standard Pack",
+  ["p_standard_mega"] = "Mega Standard Pack",
+  ["p_buffoon"] = "Buffoon Pack",
+  ["p_buffoon_normal"] = "Buffoon Pack",
+  ["p_buffoon_jumbo"] = "Jumbo Buffoon Pack",
+  ["p_buffoon_mega"] = "Mega Buffoon Pack",
+  ["p_spectral"] = "Spectral Pack",
+  ["p_spectral_normal"] = "Spectral Pack",
+  ["p_spectral_jumbo"] = "Jumbo Spectral Pack",
+  ["p_spectral_mega"] = "Mega Spectral Pack",
 }
 
 -- Constants
@@ -277,7 +576,244 @@ function Brainstorm.init()
     return false
   end
 
+  
   return true
+end
+
+-- RNG Trace functionality for debugging
+function Brainstorm.activate_rng_trace()
+  if Brainstorm.RNGTrace then
+    Brainstorm.RNGTrace.install_all_patches()
+    Brainstorm.save_state_alert("RNG Tracing Activated")
+    return true
+  end
+  return false
+end
+
+function Brainstorm.generate_test_traces()
+  if Brainstorm.RNGTrace then
+    Brainstorm.RNGTrace.generate_test_traces()
+    Brainstorm.save_state_alert("Test Traces Generated")
+    return true
+  end
+  return false
+end
+
+-- Simple global functions for console access (lowercase for console compatibility)
+function activate_rng_trace()
+  return Brainstorm.activate_rng_trace()
+end
+
+function generate_test_traces()
+  return Brainstorm.generate_test_traces()
+end
+
+-- Even simpler lowercase versions
+function rng_trace()
+  if Brainstorm and Brainstorm.RNGTrace then
+    Brainstorm.RNGTrace.install_all_patches()
+    print("[RNG] Patches installed")
+    Brainstorm.RNGTrace.generate_test_traces()
+    print("[RNG] Test traces generated")
+    print("[RNG] Check: C:\\Users\\Krish\\AppData\\Roaming\\Balatro\\Mods\\Brainstorm\\rng_trace.jsonl")
+    return true
+  end
+  print("[RNG] Failed - Brainstorm or RNGTrace not available")
+  return false
+end
+
+-- Ultra simple test
+function test_rng()
+  print("Test RNG function called!")
+  if G and G.GAME and G.GAME.pseudorandom then
+    print("Current seed: " .. tostring(G.GAME.pseudorandom.seed))
+  end
+  return true
+end
+
+-- Get pool JSON for DLL (C++ expects specific format)
+function Brainstorm.get_pool_json()
+  -- C++ parser expects named contexts, not an array
+  local pools = {
+    voucher = {
+      ctx_key = "Voucher",
+      weighted = false,
+      items = {"Overstock", "Clearance Sale", "Tarot Merchant", "Planet Merchant", "Hone", "Reroll Surplus", "Crystal Ball", "Telescope"}
+    },
+    pack1 = {
+      ctx_key = "shop_pack1",
+      weighted = false,
+      items = {"Arcana Pack", "Celestial Pack", "Spectral Pack", "Standard Pack", "Buffoon Pack"}
+    },
+    pack2 = {
+      ctx_key = "shop_pack2", 
+      weighted = false,
+      items = {"Arcana Pack", "Celestial Pack", "Spectral Pack", "Standard Pack", "Buffoon Pack"}
+    },
+    tag_small = {
+      ctx_key = "Tag_small",
+      weighted = false,
+      items = {"Uncommon Tag", "Rare Tag", "Negative Tag", "Foil Tag", "Holographic Tag", "Polychrome Tag", "Investment Tag", "Voucher Tag", "Boss Tag", "Standard Tag", "Charm Tag", "Meteor Tag", "Buffoon Tag", "Handy Tag", "Garbage Tag", "Ethereal Tag", "Coupon Tag", "Double Tag", "Juggle Tag", "D6 Tag", "Top-up Tag", "Speed Tag", "Orbital Tag", "Economy Tag"}
+    },
+    tag_big = {
+      ctx_key = "Tag_big",
+      weighted = false,
+      items = {"Uncommon Tag", "Rare Tag", "Negative Tag", "Foil Tag", "Holographic Tag", "Polychrome Tag", "Investment Tag", "Voucher Tag", "Boss Tag", "Standard Tag", "Charm Tag", "Meteor Tag", "Buffoon Tag", "Handy Tag", "Garbage Tag", "Ethereal Tag", "Coupon Tag", "Double Tag", "Juggle Tag", "D6 Tag", "Top-up Tag", "Speed Tag", "Orbital Tag", "Economy Tag"}
+    }
+  }
+  
+  -- Try json library first
+  local ok, json = pcall(require, "json")
+  if ok and json and json.encode then
+    return json.encode(pools)
+  end
+  
+  -- Fallback: manual JSON construction
+  local function encode_array(arr)
+    local str = "["
+    for i, v in ipairs(arr) do
+      if i > 1 then str = str .. "," end
+      str = str .. '"' .. v .. '"'
+    end
+    return str .. "]"
+  end
+  
+  local json_str = '{'
+  json_str = json_str .. '"voucher":{"ctx_key":"Voucher","weighted":false,"items":' .. encode_array(pools.voucher.items) .. '},'
+  json_str = json_str .. '"pack1":{"ctx_key":"shop_pack1","weighted":false,"items":' .. encode_array(pools.pack1.items) .. '},'
+  json_str = json_str .. '"pack2":{"ctx_key":"shop_pack2","weighted":false,"items":' .. encode_array(pools.pack2.items) .. '},'
+  json_str = json_str .. '"tag_small":{"ctx_key":"Tag_small","weighted":false,"items":' .. encode_array(pools.tag_small.items) .. '},'
+  json_str = json_str .. '"tag_big":{"ctx_key":"Tag_big","weighted":false,"items":' .. encode_array(pools.tag_big.items) .. '}'
+  json_str = json_str .. '}'
+  
+  return json_str
+end
+
+-- Function to update GPU pools with current game state
+function Brainstorm.update_pools()
+  if not immolate or not immolate.brainstorm_update_pools then
+    return false
+  end
+  
+  -- Collect current pool data from the game
+  local pool_data = {
+    contexts = {}
+  }
+  
+  -- Helper to extract pool items
+  local function get_pool_items(pool_key)
+    local items = {}
+    local weights = {}
+    
+    if G.P_CENTER_POOLS and G.P_CENTER_POOLS[pool_key] then
+      for _, item in ipairs(G.P_CENTER_POOLS[pool_key]) do
+        if type(item) == "table" then
+          table.insert(items, item.key or "unknown")
+          -- Check for weight in item
+          if item.weight then
+            table.insert(weights, item.weight)
+          end
+        elseif type(item) == "string" then
+          table.insert(items, item)
+        end
+      end
+    end
+    
+    return items, weights
+  end
+  
+  -- Voucher pool
+  local voucher_items, voucher_weights = get_pool_items("Voucher")
+  pool_data.contexts.voucher = {
+    ctx_key = "Voucher",
+    items = voucher_items,
+    weights = #voucher_weights > 0 and voucher_weights or nil
+  }
+  
+  -- Pack pools (shop_pack1 for both pack1 and pack2)
+  local pack_items, pack_weights = get_pool_items("Booster")
+  pool_data.contexts.pack1 = {
+    ctx_key = "shop_pack1", 
+    items = pack_items,
+    weights = #pack_weights > 0 and pack_weights or nil
+  }
+  pool_data.contexts.pack2 = {
+    ctx_key = "shop_pack1",  -- Same context for second pack
+    items = pack_items,
+    weights = #pack_weights > 0 and pack_weights or nil
+  }
+  
+  -- Tag pools
+  local tag_items, tag_weights = get_pool_items("Tag")
+  pool_data.contexts.tag_small = {
+    ctx_key = "Tag_small",
+    items = tag_items,
+    weights = #tag_weights > 0 and tag_weights or nil
+  }
+  pool_data.contexts.tag_big = {
+    ctx_key = "Tag_big",
+    items = tag_items,
+    weights = #tag_weights > 0 and tag_weights or nil
+  }
+  
+  -- Convert to JSON
+  local success, json = pcall(function()
+    -- Simple JSON serialization
+    local function to_json(t)
+      if type(t) == "table" then
+        local is_array = #t > 0
+        local result = is_array and "[" or "{"
+        local first = true
+        
+        if is_array then
+          for i, v in ipairs(t) do
+            if not first then result = result .. "," end
+            result = result .. to_json(v)
+            first = false
+          end
+        else
+          for k, v in pairs(t) do
+            if not first then result = result .. "," end
+            result = result .. '"' .. tostring(k) .. '":' .. to_json(v)
+            first = false
+          end
+        end
+        
+        return result .. (is_array and "]" or "}")
+      elseif type(t) == "string" then
+        return '"' .. t:gsub('"', '\\"') .. '"'
+      elseif type(t) == "number" then
+        return tostring(t)
+      elseif type(t) == "boolean" then
+        return tostring(t)
+      elseif t == nil then
+        return "null"
+      else
+        return '"' .. tostring(t) .. '"'
+      end
+    end
+    
+    return to_json(pool_data)
+  end)
+  
+  if success and json then
+    -- Send to DLL
+    local ok = pcall(function()
+      immolate.brainstorm_update_pools(json)
+    end)
+    
+    if ok and log then
+      log:info("Updated GPU pools", {
+        voucher_count = #voucher_items,
+        pack_count = #pack_items,
+        tag_count = #tag_items
+      })
+    end
+    
+    return ok
+  end
+  
+  return false
 end
 
 -- Save state functionality
@@ -1040,6 +1576,8 @@ local function init_ffi()
       // GPU/CUDA functions
       int get_acceleration_type();  // 0=CPU, 1=GPU
       const char* get_hardware_info();
+      // Dynamic pool updates
+      void brainstorm_update_pools(const char* json_utf8);
       void set_use_cuda(bool enable);
     ]]
     )
@@ -1133,6 +1671,14 @@ function Brainstorm.auto_reroll()
     if Brainstorm.debug.enabled then
       log:info("DLL loaded successfully")
     end
+    
+    -- Update GPU pools with current game state
+    if G and G.P_CENTER_POOLS then
+      local pools_updated = Brainstorm.update_pools()
+      if Brainstorm.debug.enabled then
+        log:info("GPU pools update", { success = pools_updated })
+      end
+    end
 
     -- Configure GPU/CUDA support based on config
     if immolate_dll.set_use_cuda then
@@ -1167,46 +1713,42 @@ function Brainstorm.auto_reroll()
       end
     end
   end
-  -- Extract pack name from configuration
-  local pack = ""
+  -- Extract pack name from configuration and map to DLL format
+  local pack_name = ""
   if #Brainstorm.config.ar_filters.pack > 0 then
-    pack = Brainstorm.config.ar_filters.pack[1]:match("^(.*)_") or ""
+    local pack_key = Brainstorm.config.ar_filters.pack[1]
+    -- Extract base pack name (e.g., "p_arcana_normal" from "p_arcana_normal_1")
+    local base_key = pack_key:match("^([^_]+_[^_]+_[^_]+)") or pack_key:match("^([^_]+_[^_]+)") or pack_key
+    -- Map to DLL-expected name
+    pack_name = Brainstorm.PACK_TO_DLL[base_key] or ""
   end
-  local pack_name = pack ~= ""
-      and localize({ type = "name_text", set = "Other", key = pack })
-    or ""
+  
+  -- Map internal keys to DLL-expected names
   local tag_name = ""
   if
     Brainstorm.config.ar_filters.tag_name
     and Brainstorm.config.ar_filters.tag_name ~= ""
   then
-    tag_name = localize({
-      type = "name_text",
-      set = "Tag",
-      key = Brainstorm.config.ar_filters.tag_name,
-    }) or ""
+    -- Use our mapping instead of localize() to ensure DLL compatibility
+    tag_name = Brainstorm.TAG_TO_DLL[Brainstorm.config.ar_filters.tag_name] or ""
   end
+  
   local tag2_name = ""
   if
     Brainstorm.config.ar_filters.tag2_name
     and Brainstorm.config.ar_filters.tag2_name ~= ""
   then
-    tag2_name = localize({
-      type = "name_text",
-      set = "Tag",
-      key = Brainstorm.config.ar_filters.tag2_name,
-    })
+    -- Use our mapping instead of localize() to ensure DLL compatibility
+    tag2_name = Brainstorm.TAG_TO_DLL[Brainstorm.config.ar_filters.tag2_name] or ""
   end
+  
   local voucher_name = ""
   if
     Brainstorm.config.ar_filters.voucher_name
     and Brainstorm.config.ar_filters.voucher_name ~= ""
   then
-    voucher_name = localize({
-      type = "name_text",
-      set = "Voucher",
-      key = Brainstorm.config.ar_filters.voucher_name,
-    }) or ""
+    -- Use our mapping instead of localize() to ensure DLL compatibility
+    voucher_name = Brainstorm.VOUCHER_TO_DLL[Brainstorm.config.ar_filters.voucher_name] or ""
   end
 
   -- Smart compatibility layer: Detect DLL version and use appropriate call
@@ -1219,71 +1761,114 @@ function Brainstorm.auto_reroll()
     Brainstorm.debug.dll_calls = (Brainstorm.debug.dll_calls or 0) + 1
   end
 
-  -- Try enhanced DLL first (8 parameters with dual tag support)
-  local enhanced_success, enhanced_result = pcall(function()
-    return immolate.brainstorm(
-      seed_found,
-      voucher_name,
-      pack_name,
-      tag_name,
-      tag2_name, -- 8th parameter for enhanced DLL
-      Brainstorm.config.ar_filters.soul_skip,
-      Brainstorm.config.ar_filters.inst_observatory,
-      Brainstorm.config.ar_filters.inst_perkeo
-    )
-  end)
-
-  if enhanced_success then
-    -- Enhanced DLL detected and working!
-    result = enhanced_result
-    if
-      tag2_name ~= ""
-      and Brainstorm.debug.enabled
-      and not Brainstorm.debug.dll_mode_logged
-    then
-      if Brainstorm.debug.enabled then
-        log:info("Using enhanced DLL for dual tag search")
+  -- Debug logging to verify parameter values
+  if Brainstorm.debug.enabled then
+    log:info("DLL parameters:", {
+      seed = seed_found,
+      voucher = voucher_name,
+      pack = pack_name,
+      tag1 = tag_name,
+      tag2 = tag2_name,
+      souls = Brainstorm.config.ar_filters.soul_skip or 0,
+      observatory = Brainstorm.config.ar_filters.inst_observatory or false,
+      perkeo = Brainstorm.config.ar_filters.inst_perkeo or false
+    })
+  end
+  
+  -- Comprehensive debug logging for DLL call
+  local timer = Brainstorm.debug_timer("DLL", "GPU search call")
+  
+  Brainstorm.debug_log("DLL", "=== CALLING DLL ===")
+  Brainstorm.debug_log("DLL", "Parameters being sent:")
+  Brainstorm.debug_log("DLL", "  seed = '%s'", seed_found or "nil")
+  Brainstorm.debug_log("DLL", "  voucher = '%s'", voucher_name or "(empty)")
+  Brainstorm.debug_log("DLL", "  pack = '%s'", pack_name or "(empty)")
+  Brainstorm.debug_log("DLL", "  tag1 = '%s'", tag_name or "(empty)")
+  Brainstorm.debug_log("DLL", "  tag2 = '%s'", tag2_name or "(empty)")
+  Brainstorm.debug_log("DLL", "  souls = %s", tostring(Brainstorm.config.ar_filters.soul_skip or 0))
+  Brainstorm.debug_log("DLL", "  observatory = %s", tostring(Brainstorm.config.ar_filters.inst_observatory or false))
+  Brainstorm.debug_log("DLL", "  perkeo = %s", tostring(Brainstorm.config.ar_filters.inst_perkeo or false))
+  
+  -- Seeds are alphanumeric (A-Z and 0-9) - no validation needed
+  
+  -- Pipeline visibility: log flow steps
+  Brainstorm.debug_log("FLOW", "=== PIPELINE START ===")
+  Brainstorm.debug_log("FLOW", "Step 1: Updating pools before search")
+  
+  -- Update pools before searching (critical!)
+  if immolate.brainstorm_update_pools then
+    local pools_json = Brainstorm.get_pool_json()
+    if pools_json then
+      Brainstorm.debug_log("DLL", "Sending pools JSON to DLL: %s", pools_json:sub(1, 200))
+      local ok, err = pcall(immolate.brainstorm_update_pools, pools_json)
+      if not ok then
+        Brainstorm.debug_log("DLL", "ERROR: Failed to update pools: %s", tostring(err))
+      else
+        Brainstorm.debug_log("DLL", "Pools updated successfully")
       end
-      Brainstorm.debug.dll_mode_logged = true
+    else
+      Brainstorm.debug_log("DLL", "ERROR: Failed to generate pools JSON")
     end
   else
-    -- Fall back to original DLL (7 parameters, no dual tag support)
-    -- This path is slower for dual tags as it requires game restarts
-    if Brainstorm.debug.enabled and not Brainstorm.debug.dll_mode_logged then
-      log:warn("Using original DLL (compatibility mode)")
-      if tag2_name ~= "" then
-        log:warn("Dual tag search will be slower - consider upgrading DLL")
-      end
-      Brainstorm.debug.dll_mode_logged = true
+    Brainstorm.debug_log("DLL", "ERROR: brainstorm_update_pools not found in DLL")
+  end
+  
+  Brainstorm.debug_log("FLOW", "Step 2: Calling brainstorm(seed=%s, voucher=%s, pack=%s, tag1=%s, tag2=%s)", 
+                       tostring(seed_found), tostring(voucher_name), tostring(pack_name), 
+                       tostring(tag_name), tostring(tag2_name))
+  
+  -- Always use 8-parameter version (our DLL expects this)
+  -- Use pcall to catch errors but always use 8 params
+  local call_success, call_result = pcall(function()
+    return immolate.brainstorm(
+      seed_found,
+      voucher_name or "",
+      pack_name or "",
+      tag_name or "",
+      tag2_name or "",
+      Brainstorm.config.ar_filters.soul_skip or 0,
+      Brainstorm.config.ar_filters.inst_observatory or false,
+      Brainstorm.config.ar_filters.inst_perkeo or false
+    )
+  end)
+  
+  timer.stop()
+  
+  local result = nil
+  if call_success then
+    result = call_result
+    Brainstorm.debug_log("DLL", "DLL call successful, result type: %s", type(result))
+    if result then
+      Brainstorm.debug_log("DLL", "Result pointer: %s", tostring(result))
     end
-
-    -- Old DLL only checks for first tag
-    local call_success, call_result = pcall(function()
-      return immolate.brainstorm(
-        seed_found,
-        voucher_name,
-        pack_name,
-        tag_name, -- Only first tag for old DLL
-        Brainstorm.config.ar_filters.soul_skip,
-        Brainstorm.config.ar_filters.inst_observatory,
-        Brainstorm.config.ar_filters.inst_perkeo
-      )
-    end)
-
-    if call_success then
-      result = call_result
-    else
-      if Brainstorm.debug.enabled then
-        log:error("DLL call failed", { error = tostring(call_result) })
-      end
-      return nil
-    end
+  else
+    Brainstorm.debug_log("DLL", "ERROR: DLL call failed - %s", tostring(call_result))
+    return nil
   end
 
-  seed_found = result and ffi.string(result) or nil
+  -- Check for null pointer explicitly
+  seed_found = nil
+  if result ~= nil and result ~= ffi.NULL then
+    seed_found = ffi.string(result)
+    Brainstorm.debug_log("DLL", "=== DLL RETURNED: %s ===", seed_found)
+    
+    -- Safety gate: only accept valid 8-char [0-9A-Z] seeds
+    local is_valid = (#seed_found == 8) and (seed_found:match("^[0-9A-Z]+$") ~= nil)
+    if is_valid then
+      Brainstorm.debug_log("DLL", "Valid seed found: %s", seed_found)
+    elseif seed_found == "RETRY" then
+      Brainstorm.debug_log("DLL", "DLL returned RETRY - no match or error")
+      seed_found = nil
+    else
+      Brainstorm.debug_log("DLL", "WARNING: Invalid seed format: '%s' (len=%d)", seed_found, #seed_found)
+      seed_found = nil
+    end
+  else
+    Brainstorm.debug_log("DLL", "No result from DLL (null pointer)")
+  end
 
   -- Free memory if enhanced DLL (always try to free for both versions)
-  if result then
+  if result ~= nil and result ~= ffi.NULL then
     if immolate.free_result then
       local free_success = pcall(immolate.free_result, result)
       if not free_success and Brainstorm.debug.enabled then
@@ -1291,6 +1876,8 @@ function Brainstorm.auto_reroll()
       end
     end
   end
+  
+  Brainstorm.debug_log("FLOW", "=== PIPELINE END (returning %s) ===", tostring(seed_found))
 
   -- Return the seed without restarting the game
   -- The caller will decide whether to restart based on deck validation

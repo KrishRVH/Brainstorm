@@ -1,0 +1,65 @@
+{
+    "ctx": [
+        {
+            "key": "Voucher",
+            "weighted": false,
+            "items": [
+                "v_overstock", "v_clearance_sale", "v_tarot_merchant", 
+                "v_planet_merchant", "v_hone", "v_glow_up", "v_reroll_surplus",
+                "v_crystal_ball", "v_telescope", "v_grabber", "v_nacho_tong",
+                "v_wasteful", "v_paint_brush", "v_observatory", "v_directors_cut",
+                "v_petroglyph", "v_retcon", "v_palette", "v_illusion",
+                "v_hieroglyph", "v_seed_money", "v_blank", "v_antimatter",
+                "v_magic_trick", "v_chaos", "v_liquidation", "v_dna",
+                "v_recyclomancy", "v_money_tree", "v_omen_globe", "v_fool_trance",
+                "v_blank_voucher"
+            ]
+        },
+        {
+            "key": "shop_pack1",
+            "weighted": false,
+            "items": [
+                "p_arcana", "p_jumbo_arcana", "p_mega_arcana",
+                "p_celestial", "p_jumbo_celestial", "p_mega_celestial",
+                "p_spectral", "p_jumbo_spectral", "p_mega_spectral",
+                "p_standard", "p_jumbo_standard", "p_mega_standard",
+                "p_buffoon", "p_jumbo_buffoon", "p_mega_buffoon"
+            ]
+        },
+        {
+            "key": "shop_pack1",
+            "weighted": false,
+            "items": [
+                "p_arcana", "p_jumbo_arcana", "p_mega_arcana",
+                "p_celestial", "p_jumbo_celestial", "p_mega_celestial",
+                "p_spectral", "p_jumbo_spectral", "p_mega_spectral",
+                "p_standard", "p_jumbo_standard", "p_mega_standard",
+                "p_buffoon", "p_jumbo_buffoon", "p_mega_buffoon"
+            ]
+        },
+        {
+            "key": "Tag_small",
+            "weighted": false,
+            "items": [
+                "tag_uncommon", "tag_rare", "tag_negative", "tag_foil",
+                "tag_holo", "tag_polychrome", "tag_investment", "tag_voucher",
+                "tag_boss", "tag_standard", "tag_charm", "tag_meteor",
+                "tag_buffoon", "tag_handy", "tag_garbage", "tag_ethereal",
+                "tag_coupon", "tag_double", "tag_juggle", "tag_d_six",
+                "tag_top_up", "tag_speed", "tag_orbital", "tag_economy"
+            ]
+        },
+        {
+            "key": "Tag_big",
+            "weighted": false,
+            "items": [
+                "tag_uncommon", "tag_rare", "tag_negative", "tag_foil",
+                "tag_holo", "tag_polychrome", "tag_investment", "tag_voucher",
+                "tag_boss", "tag_standard", "tag_charm", "tag_meteor",
+                "tag_buffoon", "tag_handy", "tag_garbage", "tag_ethereal",
+                "tag_coupon", "tag_double", "tag_juggle", "tag_d_six",
+                "tag_top_up", "tag_speed", "tag_orbital", "tag_economy"
+            ]
+        }
+    ]
+}
