@@ -1,0 +1,65 @@
+---
+# Clang-Tidy configuration for Brainstorm C++ code
+# Production-ready checks with focus on safety and performance
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  google-*,
+  -google-readability-todo,
+  hicpp-*,
+  -hicpp-no-array-decay,
+  misc-*,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  readability-*,
+  -readability-magic-numbers,
+  -readability-else-after-return
+
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  cert-err34-c,
+  cppcoreguidelines-no-malloc,
+  hicpp-exception-baseclass,
+  misc-throw-by-value-catch-by-reference,
+  performance-move-const-arg
+
+HeaderFilterRegex: '.*'
+
+CheckOptions:
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.MemberCase
+    value: lower_case_
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '25'
+  - key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
+    value: true
+  - key: performance-unnecessary-value-param.IncludeStyle
+    value: google
+  - key: modernize-use-nullptr.NullMacros
+    value: 'NULL'
