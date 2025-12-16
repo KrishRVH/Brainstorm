@@ -1,0 +1,112 @@
+# Build artifacts
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+*.exe
+*.lib
+*.a
+*.pdb
+*.ilk
+*.exp
+
+# Build directories
+build/
+Debug/
+Release/
+release/
+x64/
+x86/
+.vs/
+*.user
+*.suo
+ImmolateCPP/build/
+
+# Test outputs
+test_rng_analyzer
+balatro_rng_analyzer
+immolate_analyzer.dll
+immolate_analyzer.lib
+
+# Tools directory (generated)
+tools/
+
+# Profiling results
+profiling_results/
+
+# Temporary files and logs
+*.tmp
+*.temp
+*.log
+*.bak
+*.backup
+*~
+brainstorm.log
+gpu_debug.log
+test_results.txt
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# WSL/Windows interop
+*.exe.stackdump
+
+# Config overrides (user-specific)
+config_override.lua
+local_config.lua
+
+# Test artifacts
+test_config.lua
+test_*.txt
+coverage.info
+*.gcov
+*.gcda
+*.gcno
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Python (for any test scripts)
+__pycache__/
+*.pyc
+*.pyo
+
+# Documentation build
+docs/_build/
+*.pdf
+
+# Extracted game files (copyright)
+BalatroSource/extracted/
+BalatroSource/*.exe
+BalatroSource/*.dll
+BalatroSource/
+
+# User save states
+save_state_*.jkr
+
+# Performance logs
+perf_*.log
+benchmark_*.txt
+
+# CUDA/GPU files
+*.ptx
+*.cubin
+*.fatbin
+*.cache
+
+# Package files
+*.zip
+*.tar.gz
+*.rar
