@@ -13,7 +13,7 @@ name = 'nativefs'
 [patches.copy]
 target = "main.lua"
 position = "append"
-sources = ["Core/Brainstorm.lua"]
+sources = ["Brainstorm.lua"]
 
 [[patches]]
 [patches.pattern]

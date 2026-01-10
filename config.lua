@@ -1,1 +1,32 @@
-return {["enable"]=true,["debug_enabled"]=true,["keybinds"]={["save_state"]="z",["f_reroll"]="r",["modifier"]="lctrl",["load_state"]="x",["options"]="t",["a_reroll"]="a",},["ar_prefs"]={["face_count"]=10,["suit_ratio_decimal"]=0.5,["suit_ratio_id"]=2,["suit_ratio_percent"]="50%",["spf_int"]=5000,["spf_id"]=8,},["use_gpu_experimental"]=false,["ar_filters"]={["tag2_name"]="tag_investment",["inst_perkeo"]=false,["tag2_id"]=9,["voucher_id"]=3,["tag_id"]=3,["inst_observatory"]=false,["voucher_name"]="v_clearance_sale",["soul_skip"]=0,["pack_id"]=16,["tag_name"]="tag_double",["pack"]={[1]="p_spectral_mega_1",},},["keybind_autoreroll"]="r",}
+return {
+  enable = true,
+  keybinds = {
+    options = "t",
+    modifier = "lctrl",
+    f_reroll = "r",
+    a_reroll = "a",
+    save_state = "z",
+    load_state = "x",
+  },
+  ar_filters = {
+    pack = { "p_spectral_mega_1" },
+    pack_id = 16,
+    voucher_name = "v_clearance_sale",
+    voucher_id = 3,
+    tag_name = "tag_double",
+    tag_id = 3,
+    tag2_name = "tag_investment",
+    tag2_id = 9,
+    soul_skip = 0,
+    inst_observatory = false,
+    inst_perkeo = false,
+  },
+  ar_prefs = {
+    spf_id = 8,
+    spf_int = 5000,
+    face_count = 10,
+    suit_ratio_id = 2,
+    suit_ratio_percent = "50%",
+    suit_ratio_decimal = 0.5,
+  },
+}
