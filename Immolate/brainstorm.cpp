@@ -1,5 +1,5 @@
-#include "immolate.hpp"
 #include "functions.hpp"
+#include "immolate.hpp"
 #include "instance.hpp"
 #include "items.hpp"
 #include "rng.hpp"
@@ -634,12 +634,10 @@ int apply_filters(Instance& inst, const FilterConfig& cfg) {
     inst.setDeck(cfg.deck);
 
     const bool wants_joker = (cfg.joker != Item::RETRY);
-    const bool wants_joker_shop =
-        wants_joker &&
-        (cfg.joker_location == JokerLocation::Shop || cfg.joker_location == JokerLocation::Any);
-    const bool wants_joker_pack =
-        wants_joker &&
-        (cfg.joker_location == JokerLocation::Pack || cfg.joker_location == JokerLocation::Any);
+    const bool wants_joker_shop = wants_joker && (cfg.joker_location == JokerLocation::Shop ||
+                                                  cfg.joker_location == JokerLocation::Any);
+    const bool wants_joker_pack = wants_joker && (cfg.joker_location == JokerLocation::Pack ||
+                                                  cfg.joker_location == JokerLocation::Any);
 
     const bool needs_tags = (cfg.tag1 != Item::RETRY || cfg.tag2 != Item::RETRY);
     Item small_blind = Item::RETRY;
@@ -824,9 +822,8 @@ IMMOLATE_API const char* brainstorm_search(const char* seed_start,
         oss << "raw args seed_start=" << safe_cstr(seed_start)
             << " voucher=" << safe_cstr(voucher_key) << " pack=" << safe_cstr(pack_key)
             << " tag1=" << safe_cstr(tag1_key) << " tag2=" << safe_cstr(tag2_key)
-            << " joker=" << safe_cstr(joker_name)
-            << " joker_location=" << safe_cstr(joker_location) << " souls=" << souls
-            << " observatory=" << format_bool(observatory)
+            << " joker=" << safe_cstr(joker_name) << " joker_location=" << safe_cstr(joker_location)
+            << " souls=" << souls << " observatory=" << format_bool(observatory)
             << " perkeo=" << format_bool(perkeo) << " deck_key=" << safe_cstr(deck_key)
             << " erratic=" << format_bool(erratic) << " no_faces=" << format_bool(no_faces)
             << " min_face_cards=" << min_face_cards << " suit_ratio=" << suit_ratio
@@ -863,15 +860,15 @@ IMMOLATE_API const char* brainstorm_search(const char* seed_start,
             << " tag2=" << itemToString(cfg.tag2) << " joker=" << itemToString(cfg.joker)
             << " souls=" << cfg.souls << " observatory=" << format_bool(cfg.observatory)
             << " perkeo=" << format_bool(cfg.perkeo) << " deck=" << itemToString(cfg.deck)
-            << " erratic=" << format_bool(cfg.erratic)
-            << " no_faces=" << format_bool(cfg.no_faces)
+            << " erratic=" << format_bool(cfg.erratic) << " no_faces=" << format_bool(cfg.no_faces)
             << " min_face_cards=" << cfg.min_face_cards << " suit_ratio=" << cfg.suit_ratio;
         // cpp_log(oss.str());
     }
 
     const long long budget = resolve_seed_budget(num_seeds);
     const int thread_count = resolve_threads(threads);
-    // cpp_log("search budget=" + std::to_string(budget) + " threads=" + std::to_string(thread_count));
+    // cpp_log("search budget=" + std::to_string(budget) + " threads=" +
+    // std::to_string(thread_count));
 
     const std::string result = search_filters(cpp_seed, cfg, budget, thread_count);
     if (result.empty()) {

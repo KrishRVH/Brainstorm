@@ -1,1 +1,42 @@
-return {["enable"]=true,["ar_prefs"]={["face_count"]=15,["suit_ratio_decimal"]=0.6,["suit_ratio_id"]=3,["suit_ratio_percent"]="60%",["spf_int"]=50000,["spf_id"]=11,},["ar_filters"]={["tag2_name"]="tag_investment",["joker_name"]="Joker",["joker_id"]=2,["joker_location_id"]=1,["tag2_id"]=9,["voucher_id"]=2,["inst_perkeo"]=false,["tag_id"]=3,["inst_observatory"]=false,["soul_skip"]=1,["voucher_name"]="v_overstock_norm",["joker_location"]="any",["pack_id"]=2,["tag_name"]="tag_double",["pack"]={[1]="p_arcana_normal_1",[2]="p_arcana_normal_2",[3]="p_arcana_normal_3",[4]="p_arcana_normal_4",},},["keybinds"]={["save_state"]="z",["f_reroll"]="r",["modifier"]="lctrl",["load_state"]="x",["options"]="t",["a_reroll"]="a",},}
+return {
+  ["enable"] = true,
+  ["ar_prefs"] = {
+    ["face_count"] = 15,
+    ["suit_ratio_decimal"] = 0.6,
+    ["suit_ratio_id"] = 3,
+    ["suit_ratio_percent"] = "60%",
+    ["spf_int"] = 50000,
+    ["spf_id"] = 11,
+  },
+  ["ar_filters"] = {
+    ["tag2_name"] = "tag_investment",
+    ["joker_name"] = "Joker",
+    ["joker_search"] = "",
+    ["joker_id"] = 2,
+    ["joker_location_id"] = 1,
+    ["tag2_id"] = 9,
+    ["voucher_id"] = 2,
+    ["inst_perkeo"] = false,
+    ["tag_id"] = 3,
+    ["inst_observatory"] = false,
+    ["soul_skip"] = 1,
+    ["voucher_name"] = "v_overstock_norm",
+    ["joker_location"] = "any",
+    ["pack_id"] = 2,
+    ["tag_name"] = "tag_double",
+    ["pack"] = {
+      [1] = "p_arcana_normal_1",
+      [2] = "p_arcana_normal_2",
+      [3] = "p_arcana_normal_3",
+      [4] = "p_arcana_normal_4",
+    },
+  },
+  ["keybinds"] = {
+    ["save_state"] = "z",
+    ["f_reroll"] = "r",
+    ["modifier"] = "lctrl",
+    ["load_state"] = "x",
+    ["options"] = "t",
+    ["a_reroll"] = "a",
+  },
+}

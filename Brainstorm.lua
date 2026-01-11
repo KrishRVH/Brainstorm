@@ -36,6 +36,7 @@ Brainstorm.config = {
     tag2_name = "",
     tag2_id = 1,
     joker_name = "",
+    joker_search = "",
     joker_id = 1,
     joker_location = "any",
     joker_location_id = 1,
@@ -150,7 +151,9 @@ end
 
 local function update_auto_reroll_status()
   local scanned = Brainstorm.ar_seeds_scanned or 0
-  Brainstorm.ar_status_text = "Rerolling... scanned " .. format_count(scanned) .. " seeds"
+  Brainstorm.ar_status_text = "Rerolling... scanned "
+    .. format_count(scanned)
+    .. " seeds"
 end
 
 local function init_log_path()

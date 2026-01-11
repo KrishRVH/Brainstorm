@@ -8,6 +8,7 @@ local nativefs = require("nativefs")
 -- Performance: Cache frequently used functions
 local ipairs = ipairs
 local pairs = pairs
+local string_lower = string.lower
 
 -- Tag definitions mapping display names to internal IDs
 -- Note: "Speed Tag" is internally called "tag_skip" in Balatro
@@ -109,12 +110,37 @@ local function rebuild_joker_options()
   if not pool then
     return
   end
+  local search = ""
+  if Brainstorm and Brainstorm.config and Brainstorm.config.ar_filters then
+    search = Brainstorm.config.ar_filters.joker_search or ""
+  end
+  if type(search) ~= "string" then
+    search = tostring(search or "")
+  end
+  search = string_lower(search)
+  search = search:gsub("^%s+", ""):gsub("%s+$", "")
+  local has_search = search ~= ""
   for _, center in ipairs(pool) do
     if center and center.name and joker_list[center.name] == nil then
-      joker_list[center.name] = center.name
-      joker_keys[#joker_keys + 1] = center.name
+      local name = center.name
+      if (not has_search) or string_lower(name):find(search, 1, true) then
+        joker_list[name] = name
+        joker_keys[#joker_keys + 1] = name
+      end
     end
   end
+  table.sort(joker_keys, function(a, b)
+    if a == b then
+      return false
+    end
+    if a == "None" then
+      return true
+    end
+    if b == "None" then
+      return false
+    end
+    return a < b
+  end)
 end
 -- Seeds per frame (SPF) options for auto-reroll batch size
 -- Higher values test more seeds per pass but may cause lag
@@ -295,6 +321,68 @@ G.FUNCS.change_search_joker = function(x)
   write_config()
 end
 
+local function refresh_brainstorm_tab()
+  if not (G and G.OVERLAY_MENU) then
+    return
+  end
+  local tab_button = G.OVERLAY_MENU:get_UIE_by_ID("tab_but_Brainstorm")
+  if tab_button then
+    G.FUNCS.change_tab(tab_button)
+  end
+end
+
+G.FUNCS.apply_joker_filter = function()
+  local search = config.ar_filters.joker_search
+  if type(search) ~= "string" then
+    search = tostring(search or "")
+  end
+  search = search:gsub("^%s+", ""):gsub("%s+$", "")
+  config.ar_filters.joker_search = search
+  rebuild_joker_options()
+  if G and G.P_CENTER_POOLS and G.P_CENTER_POOLS.Joker then
+    if
+      config.ar_filters.joker_name ~= ""
+      and joker_list[config.ar_filters.joker_name] == nil
+    then
+      config.ar_filters.joker_name = ""
+      config.ar_filters.joker_id = 1
+    end
+  end
+  write_config()
+  refresh_brainstorm_tab()
+end
+
+G.FUNCS.reset_brainstorm_settings = function()
+  config.ar_filters.tag_id = 1
+  config.ar_filters.tag_name = tag_list["None"] or ""
+  config.ar_filters.tag2_id = 1
+  config.ar_filters.tag2_name = tag_list["None"] or ""
+  config.ar_filters.voucher_id = 1
+  config.ar_filters.voucher_name = voucher_list["None"] or ""
+  config.ar_filters.pack_id = 1
+  config.ar_filters.pack = pack_list["None"] or {}
+  config.ar_filters.joker_search = ""
+  config.ar_filters.joker_name = ""
+  config.ar_filters.joker_id = 1
+  config.ar_filters.joker_location_id = 1
+  config.ar_filters.joker_location = joker_location_list["In Any Location"]
+    or "any"
+  config.ar_filters.soul_skip = 0
+  config.ar_filters.inst_observatory = false
+  config.ar_filters.inst_perkeo = false
+
+  config.ar_prefs.face_count = 0
+  config.ar_prefs.suit_ratio_percent = "Disabled"
+  config.ar_prefs.suit_ratio_decimal = ratio_list["Disabled"] or 0
+  config.ar_prefs.suit_ratio_id = option_index_for_value(ratio_keys, "Disabled")
+  local default_spf_key = "500"
+  config.ar_prefs.spf_id = option_index_for_value(spf_keys, default_spf_key)
+  config.ar_prefs.spf_int = spf_list[default_spf_key] or 500
+
+  write_config()
+  refresh_brainstorm_tab()
+end
+
 -- Joker location callback
 G.FUNCS.change_search_joker_location = function(x)
   config.ar_filters.joker_location_id = x.to_key
@@ -340,32 +428,31 @@ local ct = create_tabs
 function create_tabs(args)
   -- Check if this is the main settings tabs (tab_h == 7.05)
   if args and args.tab_h == 7.05 then
-    rebuild_joker_options()
-    local joker_option = clamp_index(
-      config.ar_filters.joker_id or 1,
-      #joker_keys
-    )
-    if config.ar_filters.joker_name and config.ar_filters.joker_name ~= "" then
-      joker_option = option_index_for_value(
-        joker_keys,
-        config.ar_filters.joker_name
-      )
-    end
-    local joker_location_option = clamp_index(
-      config.ar_filters.joker_location_id or 1,
-      #joker_location_keys
-    )
-    if
-      config.ar_filters.joker_location
-      and config.ar_filters.joker_location ~= ""
-    then
-      joker_location_option =
-        location_index_for_value(config.ar_filters.joker_location)
-    end
     -- Add Brainstorm tab
     args.tabs[#args.tabs + 1] = {
       label = "Brainstorm",
       tab_definition_function = function()
+        rebuild_joker_options()
+        local joker_option =
+          clamp_index(config.ar_filters.joker_id or 1, #joker_keys)
+        if
+          config.ar_filters.joker_name
+          and config.ar_filters.joker_name ~= ""
+        then
+          joker_option =
+            option_index_for_value(joker_keys, config.ar_filters.joker_name)
+        end
+        local joker_location_option = clamp_index(
+          config.ar_filters.joker_location_id or 1,
+          #joker_location_keys
+        )
+        if
+          config.ar_filters.joker_location
+          and config.ar_filters.joker_location ~= ""
+        then
+          joker_location_option =
+            location_index_for_value(config.ar_filters.joker_location)
+        end
         return {
           n = G.UIT.ROOT,
           config = {
@@ -415,6 +502,50 @@ function create_tabs(args)
                   opt_callback = "change_target_pack",
                   current_option = Brainstorm.config.ar_filters.pack_id or 1,
                 }),
+                {
+                  n = G.UIT.R,
+                  config = { align = "cm", padding = 0.05 },
+                  nodes = {
+                    {
+                      n = G.UIT.R,
+                      config = { align = "cm" },
+                      nodes = {
+                        {
+                          n = G.UIT.T,
+                          config = {
+                            text = "AR: JOKER FILTER",
+                            scale = 0.4,
+                            colour = G.C.UI.TEXT_LIGHT,
+                          },
+                        },
+                      },
+                    },
+                    {
+                      n = G.UIT.R,
+                      config = { align = "cm", padding = 0.05 },
+                      nodes = {
+                        create_text_input({
+                          ref_table = config.ar_filters,
+                          ref_value = "joker_search",
+                          prompt_text = "Filter jokers...",
+                          text_scale = 0.3,
+                          w = 2.6,
+                          h = 0.6,
+                          max_length = 24,
+                          extended_corpus = true,
+                        }),
+                        UIBox_button({
+                          label = { "Apply" },
+                          button = "apply_joker_filter",
+                          minw = 0.9,
+                          scale = 0.3,
+                          col = true,
+                          colour = G.C.BLUE,
+                        }),
+                      },
+                    },
+                  },
+                },
                 create_option_cycle({
                   label = "AR: JOKER SEARCH",
                   scale = 0.8,
@@ -430,16 +561,6 @@ function create_tabs(args)
                   options = joker_location_keys,
                   opt_callback = "change_search_joker_location",
                   current_option = joker_location_option,
-                }),
-                create_option_cycle({
-                  label = "AR: N. SOULS",
-                  scale = 0.8,
-                  w = 4,
-                  options = { 0, 1 },
-                  opt_callback = "change_soul_count",
-                  current_option = (
-                    Brainstorm.config.ar_filters.soul_skip or 0
-                  ) + 1,
                 }),
               },
             },
@@ -475,6 +596,16 @@ function create_tabs(args)
                   callback = write_config,
                 }),
                 create_option_cycle({
+                  label = "AR: N. SOULS",
+                  scale = 0.8,
+                  w = 4,
+                  options = { 0, 1 },
+                  opt_callback = "change_soul_count",
+                  current_option = (
+                    Brainstorm.config.ar_filters.soul_skip or 0
+                  ) + 1,
+                }),
+                create_option_cycle({
                   label = "ED: Min. # of Face Cards",
                   scale = 0.8,
                   w = 4,
@@ -499,6 +630,13 @@ function create_tabs(args)
                   opt_callback = "change_suit_ratio",
                   current_option = Brainstorm.config.ar_prefs.suit_ratio_id
                     or 1,
+                }),
+                UIBox_button({
+                  label = { "Reset All" },
+                  button = "reset_brainstorm_settings",
+                  minw = 3.5,
+                  scale = 0.45,
+                  colour = G.C.ORANGE,
                 }),
               },
             },
