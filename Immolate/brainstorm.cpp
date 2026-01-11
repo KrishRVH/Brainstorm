@@ -648,7 +648,11 @@ int apply_filters(Instance& inst, const FilterConfig& cfg) {
     }
 
     if (cfg.tag1 != Item::RETRY || cfg.tag2 != Item::RETRY) {
-        if (cfg.tag2 == Item::RETRY) {
+        if (cfg.tag1 == Item::RETRY) {
+            if (small_blind != cfg.tag2 && big_blind != cfg.tag2) {
+                return 0;
+            }
+        } else if (cfg.tag2 == Item::RETRY) {
             if (small_blind != cfg.tag1 && big_blind != cfg.tag1) {
                 return 0;
             }
