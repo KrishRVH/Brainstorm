@@ -86,6 +86,36 @@ local pack_list = {
   ["Jumbo Spectral"] = { "p_spectral_jumbo_1" },
   ["Mega Spectral"] = { "p_spectral_mega_1" },
 }
+
+local joker_list = { ["None"] = "" }
+local joker_keys = { "None" }
+
+local joker_location_list = {
+  ["In Any Location"] = "any",
+  ["In Shop Slots"] = "shop",
+  ["In Buffoon Packs"] = "pack",
+}
+
+local joker_location_keys = {
+  "In Any Location",
+  "In Shop Slots",
+  "In Buffoon Packs",
+}
+
+local function rebuild_joker_options()
+  joker_list = { ["None"] = "" }
+  joker_keys = { "None" }
+  local pool = G and G.P_CENTER_POOLS and G.P_CENTER_POOLS.Joker
+  if not pool then
+    return
+  end
+  for _, center in ipairs(pool) do
+    if center and center.name and joker_list[center.name] == nil then
+      joker_list[center.name] = center.name
+      joker_keys[#joker_keys + 1] = center.name
+    end
+  end
+end
 -- Seeds per frame (SPF) options for auto-reroll batch size
 -- Higher values test more seeds per pass but may cause lag
 local spf_list = {
@@ -186,6 +216,44 @@ local pack_keys = {
   "Mega Spectral",
 }
 
+local function clamp_index(index, max_value)
+  if type(index) ~= "number" then
+    return 1
+  end
+  index = math.floor(index)
+  if index < 1 then
+    return 1
+  end
+  if index > max_value then
+    return max_value
+  end
+  return index
+end
+
+local function option_index_for_value(options, value)
+  if value == nil or value == "" then
+    return 1
+  end
+  for i, option in ipairs(options) do
+    if option == value then
+      return i
+    end
+  end
+  return 1
+end
+
+local function location_index_for_value(value)
+  if value == nil or value == "" then
+    return 1
+  end
+  for i, option in ipairs(joker_location_keys) do
+    if joker_location_list[option] == value then
+      return i
+    end
+  end
+  return 1
+end
+
 -- UI callback functions for settings changes
 -- These are called when users modify settings in the Brainstorm tab
 -- Cache references for better performance
@@ -217,6 +285,20 @@ end
 G.FUNCS.change_target_tag2 = function(x)
   config.ar_filters.tag2_id = x.to_key
   config.ar_filters.tag2_name = tag_list[x.to_val]
+  write_config()
+end
+
+-- Joker selection callback
+G.FUNCS.change_search_joker = function(x)
+  config.ar_filters.joker_id = x.to_key
+  config.ar_filters.joker_name = joker_list[x.to_val] or ""
+  write_config()
+end
+
+-- Joker location callback
+G.FUNCS.change_search_joker_location = function(x)
+  config.ar_filters.joker_location_id = x.to_key
+  config.ar_filters.joker_location = joker_location_list[x.to_val] or "any"
   write_config()
 end
 
@@ -258,6 +340,28 @@ local ct = create_tabs
 function create_tabs(args)
   -- Check if this is the main settings tabs (tab_h == 7.05)
   if args and args.tab_h == 7.05 then
+    rebuild_joker_options()
+    local joker_option = clamp_index(
+      config.ar_filters.joker_id or 1,
+      #joker_keys
+    )
+    if config.ar_filters.joker_name and config.ar_filters.joker_name ~= "" then
+      joker_option = option_index_for_value(
+        joker_keys,
+        config.ar_filters.joker_name
+      )
+    end
+    local joker_location_option = clamp_index(
+      config.ar_filters.joker_location_id or 1,
+      #joker_location_keys
+    )
+    if
+      config.ar_filters.joker_location
+      and config.ar_filters.joker_location ~= ""
+    then
+      joker_location_option =
+        location_index_for_value(config.ar_filters.joker_location)
+    end
     -- Add Brainstorm tab
     args.tabs[#args.tabs + 1] = {
       label = "Brainstorm",
@@ -310,6 +414,22 @@ function create_tabs(args)
                   options = pack_keys,
                   opt_callback = "change_target_pack",
                   current_option = Brainstorm.config.ar_filters.pack_id or 1,
+                }),
+                create_option_cycle({
+                  label = "AR: JOKER SEARCH",
+                  scale = 0.8,
+                  w = 4,
+                  options = joker_keys,
+                  opt_callback = "change_search_joker",
+                  current_option = joker_option,
+                }),
+                create_option_cycle({
+                  label = "AR: JOKER LOCATION",
+                  scale = 0.8,
+                  w = 4,
+                  options = joker_location_keys,
+                  opt_callback = "change_search_joker_location",
+                  current_option = joker_location_option,
                 }),
                 create_option_cycle({
                   label = "AR: N. SOULS",

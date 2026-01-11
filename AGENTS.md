@@ -24,9 +24,11 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 - No standalone scripts or test runners; use the Makefile targets and validate in-game.
 
 ## Architecture & FFI Safety
-- DLL entry: `immolate.brainstorm_search(seed_start, voucher_key, pack_key, tag1_key, tag2_key, souls, observatory, perkeo, deck_key, erratic, no_faces, min_face_cards, suit_ratio, num_seeds, threads)`; pass Balatro keys (e.g. `v_telescope`, `tag_charm`, `p_spectral_mega_1`), always `free_result()` on non-empty returns, and wrap FFI in `pcall`.
+- DLL entry: `immolate.brainstorm_search(seed_start, voucher_key, pack_key, tag1_key, tag2_key, joker_name, joker_location, souls, observatory, perkeo, deck_key, erratic, no_faces, min_face_cards, suit_ratio, num_seeds, threads)`; pass Balatro keys (e.g. `v_telescope`, `tag_charm`, `p_spectral_mega_1`), always `free_result()` on non-empty returns, and wrap FFI in `pcall`.
 - Lua loads `Immolate.dll`.
-- Pack filter simulates both shop pack slots; voucher check is ante-1 voucher; observatory/perkeo paths reuse early RNG state.
+- Pack filter simulates both shop pack slots; voucher check is ante-1 voucher; observatory reuses the same pack/voucher rolls, and Perkeo requires The Soul to roll Perkeo (legendary pool).
+- Joker search checks the first shop: location `shop` scans shop slots, `pack` scans Buffoon packs, `any` checks both (pack search respects the selected pack filter).
+- Soul checks only apply to Arcana/Spectral packs in the current shop slots.
 - Auto-reroll UI shows live scanned seed counts; SPF options go up to 50,000 seeds per pass.
 
 ## Coding Style & Naming Conventions

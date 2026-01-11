@@ -35,6 +35,10 @@ Brainstorm.config = {
     tag_id = 2,
     tag2_name = "",
     tag2_id = 1,
+    joker_name = "",
+    joker_id = 1,
+    joker_location = "any",
+    joker_location_id = 1,
     soul_skip = 1,
     inst_observatory = false,
     inst_perkeo = false,
@@ -535,7 +539,7 @@ local function init_ffi()
       ffi.cdef,
       [[
       // Brainstorm seed search
-      const char* brainstorm_search(const char* seed_start, const char* voucher_key, const char* pack_key, const char* tag1_key, const char* tag2_key, double souls, bool observatory, bool perkeo, const char* deck_key, bool erratic, bool no_faces, int min_face_cards, double suit_ratio, long long num_seeds, int threads);
+      const char* brainstorm_search(const char* seed_start, const char* voucher_key, const char* pack_key, const char* tag1_key, const char* tag2_key, const char* joker_name, const char* joker_location, double souls, bool observatory, bool perkeo, const char* deck_key, bool erratic, bool no_faces, int min_face_cards, double suit_ratio, long long num_seeds, int threads);
       // Set native log path (optional)
       void immolate_set_log_path(const char* path);
       // Free memory allocated by DLL (prevents memory leaks)
@@ -663,6 +667,10 @@ function Brainstorm.auto_reroll()
   --     .. as_string(Brainstorm.config.ar_filters.tag_name)
   --     .. " tag2="
   --     .. as_string(Brainstorm.config.ar_filters.tag2_name)
+  --     .. " joker="
+  --     .. as_string(Brainstorm.config.ar_filters.joker_name)
+  --     .. " joker_location="
+  --     .. as_string(Brainstorm.config.ar_filters.joker_location)
   --     .. " souls="
   --     .. as_string(Brainstorm.config.ar_filters.soul_skip)
   --     .. " observatory="
@@ -697,6 +705,8 @@ function Brainstorm.auto_reroll()
     as_string(pack_key),
     as_string(Brainstorm.config.ar_filters.tag_name),
     as_string(Brainstorm.config.ar_filters.tag2_name),
+    as_string(Brainstorm.config.ar_filters.joker_name),
+    as_string(Brainstorm.config.ar_filters.joker_location),
     as_number(Brainstorm.config.ar_filters.soul_skip, 0),
     as_bool(Brainstorm.config.ar_filters.inst_observatory),
     as_bool(Brainstorm.config.ar_filters.inst_perkeo),

@@ -1,4 +1,5 @@
 #include "immolate.hpp"
+#include "functions.hpp"
 #include "instance.hpp"
 #include "items.hpp"
 #include "rng.hpp"
@@ -50,11 +51,19 @@ const std::array<Item, kSuitCount> kSuitOrder = {
     Item::Spades,
 };
 
+enum class JokerLocation {
+    Any,
+    Shop,
+    Pack,
+};
+
 struct FilterConfig {
     Item voucher = Item::RETRY;
     Item pack = Item::RETRY;
     Item tag1 = Item::RETRY;
     Item tag2 = Item::RETRY;
+    Item joker = Item::RETRY;
+    JokerLocation joker_location = JokerLocation::Any;
     long souls = 0;
     bool observatory = false;
     bool perkeo = false;
@@ -411,10 +420,45 @@ Item parse_deck_key(const std::string& key) {
     return Item::Red_Deck;
 }
 
+bool is_joker_item(Item item) {
+    if (item <= Item::J_BEGIN || item >= Item::J_END) {
+        return false;
+    }
+    if (item == Item::J_C_BEGIN || item == Item::J_C_END || item == Item::J_U_BEGIN ||
+        item == Item::J_U_END || item == Item::J_R_BEGIN || item == Item::J_R_END ||
+        item == Item::J_L_BEGIN || item == Item::J_L_END) {
+        return false;
+    }
+    return true;
+}
+
+Item parse_joker_name(const std::string& name) {
+    if (name.empty()) {
+        return Item::RETRY;
+    }
+    Item item = stringToItem(name);
+    if (!is_joker_item(item)) {
+        return Item::RETRY;
+    }
+    return item;
+}
+
+JokerLocation parse_joker_location(const std::string& location) {
+    if (location == "shop") {
+        return JokerLocation::Shop;
+    }
+    if (location == "pack") {
+        return JokerLocation::Pack;
+    }
+    return JokerLocation::Any;
+}
+
 FilterConfig make_config(const std::string& voucher,
                          const std::string& pack,
                          const std::string& tag1,
                          const std::string& tag2,
+                         const std::string& joker_name,
+                         const std::string& joker_location,
                          double souls,
                          bool observatory,
                          bool perkeo,
@@ -428,6 +472,8 @@ FilterConfig make_config(const std::string& voucher,
     cfg.pack = parse_pack_key(pack);
     cfg.tag1 = parse_tag_key(tag1);
     cfg.tag2 = parse_tag_key(tag2);
+    cfg.joker = parse_joker_name(joker_name);
+    cfg.joker_location = parse_joker_location(joker_location);
     cfg.souls = (souls > 0) ? static_cast<long>(souls) : 0;
     cfg.observatory = observatory;
     cfg.perkeo = perkeo;
@@ -499,6 +545,71 @@ bool passes_erratic_filters(Instance& inst, const FilterConfig& cfg) {
     return true;
 }
 
+bool is_arcana_pack(Item pack) {
+    return pack == Item::Arcana_Pack || pack == Item::Jumbo_Arcana_Pack ||
+           pack == Item::Mega_Arcana_Pack;
+}
+
+bool is_spectral_pack(Item pack) {
+    return pack == Item::Spectral_Pack || pack == Item::Jumbo_Spectral_Pack ||
+           pack == Item::Mega_Spectral_Pack;
+}
+
+bool is_soulable_pack(Item pack) {
+    return is_arcana_pack(pack) || is_spectral_pack(pack);
+}
+
+bool is_buffoon_pack(Item pack) {
+    return pack == Item::Buffoon_Pack || pack == Item::Jumbo_Buffoon_Pack ||
+           pack == Item::Mega_Buffoon_Pack;
+}
+
+int count_souls_in_pack(Instance& inst, Item pack, int ante) {
+    if (!is_soulable_pack(pack)) {
+        return 0;
+    }
+    const Pack info = packInfo(pack);
+    std::vector<Item> cards;
+    if (is_arcana_pack(pack)) {
+        cards = inst.nextArcanaPack(info.size, ante);
+    } else {
+        cards = inst.nextSpectralPack(info.size, ante);
+    }
+    return static_cast<int>(std::count(cards.begin(), cards.end(), Item::The_Soul));
+}
+
+bool shop_has_joker(Instance& inst, Item target, int ante) {
+    constexpr int kShopJokerSlots = 2;
+    bool found = false;
+    for (int i = 0; i < kShopJokerSlots; ++i) {
+        ShopItem item = inst.nextShopItem(ante);
+        if (item.type == Item::T_Joker && item.item == target) {
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool pack_has_joker(Instance& inst, Item pack, Item target, int ante) {
+    if (!is_buffoon_pack(pack)) {
+        return false;
+    }
+    const Pack info = packInfo(pack);
+    const std::vector<JokerData> jokers = inst.nextBuffoonPack(info.size, ante);
+    for (const JokerData& joker : jokers) {
+        if (joker.joker == target) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool soul_yields_perkeo(Instance& inst, int ante) {
+    inst.random(RandomType::Joker_Rarity + anteToString(ante) + ItemSource::Soul);
+    const JokerData joker = inst.nextJoker(ItemSource::Soul, ante, false);
+    return joker.joker == Item::Perkeo;
+}
+
 int resolve_threads(int threads) {
     if (threads > 0) {
         return std::max(1, std::min(threads, 4));
@@ -518,15 +629,24 @@ long long resolve_seed_budget(long long num_seeds) {
 }
 
 int apply_filters(Instance& inst, const FilterConfig& cfg) {
-    inst.initLocks(1, false, false);
+    constexpr int kAnte = 1;
+    inst.initLocks(kAnte, false, false);
     inst.setDeck(cfg.deck);
 
-    const bool needs_tags = (cfg.tag1 != Item::RETRY || cfg.tag2 != Item::RETRY || cfg.perkeo);
+    const bool wants_joker = (cfg.joker != Item::RETRY);
+    const bool wants_joker_shop =
+        wants_joker &&
+        (cfg.joker_location == JokerLocation::Shop || cfg.joker_location == JokerLocation::Any);
+    const bool wants_joker_pack =
+        wants_joker &&
+        (cfg.joker_location == JokerLocation::Pack || cfg.joker_location == JokerLocation::Any);
+
+    const bool needs_tags = (cfg.tag1 != Item::RETRY || cfg.tag2 != Item::RETRY);
     Item small_blind = Item::RETRY;
     Item big_blind = Item::RETRY;
     if (needs_tags) {
-        small_blind = inst.nextTag(1);
-        big_blind = inst.nextTag(1);
+        small_blind = inst.nextTag(kAnte);
+        big_blind = inst.nextTag(kAnte);
     }
 
     if (cfg.tag1 != Item::RETRY || cfg.tag2 != Item::RETRY) {
@@ -547,16 +667,27 @@ int apply_filters(Instance& inst, const FilterConfig& cfg) {
         }
     }
 
-    if (cfg.voucher != Item::RETRY) {
-        const Item first_voucher = inst.nextVoucher(1);
-        if (first_voucher != cfg.voucher) {
-            return 0;
-        }
+    const bool needs_voucher = (cfg.voucher != Item::RETRY || cfg.observatory);
+    Item first_voucher = Item::RETRY;
+    if (needs_voucher) {
+        first_voucher = inst.nextVoucher(kAnte);
+    }
+
+    const bool needs_packs = (cfg.pack != Item::RETRY || cfg.observatory || cfg.perkeo ||
+                              cfg.souls > 0 || wants_joker_pack);
+    Item pack_slot_1 = Item::RETRY;
+    Item pack_slot_2 = Item::RETRY;
+    if (needs_packs) {
+        pack_slot_1 = inst.nextPack(kAnte);
+        pack_slot_2 = inst.nextPack(kAnte);
+    }
+    const std::array<Item, 2> pack_slots = {pack_slot_1, pack_slot_2};
+
+    if (cfg.voucher != Item::RETRY && first_voucher != cfg.voucher) {
+        return 0;
     }
 
     if (cfg.pack != Item::RETRY) {
-        const Item pack_slot_1 = inst.nextPack(1);
-        const Item pack_slot_2 = inst.nextPack(1);
         const bool pack_match = (pack_slot_1 == cfg.pack) || (pack_slot_2 == cfg.pack);
         if (!pack_match) {
             return 0;
@@ -564,11 +695,9 @@ int apply_filters(Instance& inst, const FilterConfig& cfg) {
     }
 
     if (cfg.observatory) {
-        if (inst.nextVoucher(1) != Item::Telescope) {
+        if (first_voucher != Item::Telescope) {
             return 0;
         }
-        const Item pack_slot_1 = inst.nextPack(1);
-        const Item pack_slot_2 = inst.nextPack(1);
         const bool has_celestial = (pack_slot_1 == Item::Mega_Celestial_Pack) ||
                                    (pack_slot_2 == Item::Mega_Celestial_Pack);
         if (!has_celestial) {
@@ -576,27 +705,69 @@ int apply_filters(Instance& inst, const FilterConfig& cfg) {
         }
     }
 
-    if (cfg.perkeo) {
-        if (small_blind != Item::Investment_Tag && big_blind != Item::Investment_Tag) {
-            return 0;
+    if (wants_joker) {
+        bool joker_found = false;
+        if (wants_joker_shop && shop_has_joker(inst, cfg.joker, kAnte)) {
+            joker_found = true;
         }
-
-        const auto tarots = inst.nextArcanaPack(5, 1);
-        const bool found_soul = std::any_of(
-            tarots.begin(), tarots.end(), [](Item item) { return item == Item::The_Soul; });
-        if (!found_soul) {
+        if (!joker_found && wants_joker_pack) {
+            for (Item pack : pack_slots) {
+                if (pack == Item::RETRY) {
+                    continue;
+                }
+                if (cfg.pack != Item::RETRY && pack != cfg.pack) {
+                    continue;
+                }
+                if (pack_has_joker(inst, pack, cfg.joker, kAnte)) {
+                    joker_found = true;
+                    break;
+                }
+            }
+        }
+        if (!joker_found) {
             return 0;
         }
     }
 
-    if (cfg.souls > 0) {
-        for (long i = 0; i < cfg.souls; ++i) {
-            const auto tarots = inst.nextArcanaPack(5, 1);
-            const bool found_soul = std::any_of(
-                tarots.begin(), tarots.end(), [](Item item) { return item == Item::The_Soul; });
-            if (!found_soul) {
-                return 0;
+    if (cfg.perkeo || cfg.souls > 0) {
+        long souls_found = 0;
+        bool perkeo_found = !cfg.perkeo;
+        for (Item pack : pack_slots) {
+            if (pack == Item::RETRY) {
+                continue;
             }
+            if (cfg.pack != Item::RETRY && pack != cfg.pack) {
+                continue;
+            }
+            if (!is_soulable_pack(pack)) {
+                continue;
+            }
+
+            const int souls_in_pack = count_souls_in_pack(inst, pack, kAnte);
+            if (souls_in_pack <= 0) {
+                continue;
+            }
+            souls_found += souls_in_pack;
+
+            if (cfg.perkeo) {
+                const int uses = std::min(souls_in_pack, packInfo(pack).choices);
+                for (int i = 0; i < uses; ++i) {
+                    if (soul_yields_perkeo(inst, kAnte)) {
+                        perkeo_found = true;
+                        break;
+                    }
+                }
+            }
+            if (cfg.perkeo && perkeo_found) {
+                break;
+            }
+        }
+
+        if (cfg.souls > 0 && souls_found < cfg.souls) {
+            return 0;
+        }
+        if (cfg.perkeo && !perkeo_found) {
+            return 0;
         }
     }
 
@@ -635,6 +806,8 @@ IMMOLATE_API const char* brainstorm_search(const char* seed_start,
                                            const char* pack_key,
                                            const char* tag1_key,
                                            const char* tag2_key,
+                                           const char* joker_name,
+                                           const char* joker_location,
                                            double souls,
                                            bool observatory,
                                            bool perkeo,
@@ -651,7 +824,9 @@ IMMOLATE_API const char* brainstorm_search(const char* seed_start,
         oss << "raw args seed_start=" << safe_cstr(seed_start)
             << " voucher=" << safe_cstr(voucher_key) << " pack=" << safe_cstr(pack_key)
             << " tag1=" << safe_cstr(tag1_key) << " tag2=" << safe_cstr(tag2_key)
-            << " souls=" << souls << " observatory=" << format_bool(observatory)
+            << " joker=" << safe_cstr(joker_name)
+            << " joker_location=" << safe_cstr(joker_location) << " souls=" << souls
+            << " observatory=" << format_bool(observatory)
             << " perkeo=" << format_bool(perkeo) << " deck_key=" << safe_cstr(deck_key)
             << " erratic=" << format_bool(erratic) << " no_faces=" << format_bool(no_faces)
             << " min_face_cards=" << min_face_cards << " suit_ratio=" << suit_ratio
@@ -663,12 +838,16 @@ IMMOLATE_API const char* brainstorm_search(const char* seed_start,
     const std::string cpp_pack(pack_key ? pack_key : "");
     const std::string cpp_tag1(tag1_key ? tag1_key : "");
     const std::string cpp_tag2(tag2_key ? tag2_key : "");
+    const std::string cpp_joker(joker_name ? joker_name : "");
+    const std::string cpp_joker_location(joker_location ? joker_location : "");
     const std::string cpp_deck(deck_key ? deck_key : "");
 
     FilterConfig cfg = make_config(cpp_voucher,
                                    cpp_pack,
                                    cpp_tag1,
                                    cpp_tag2,
+                                   cpp_joker,
+                                   cpp_joker_location,
                                    souls,
                                    observatory,
                                    perkeo,
@@ -681,10 +860,11 @@ IMMOLATE_API const char* brainstorm_search(const char* seed_start,
         std::ostringstream oss;
         oss << "parsed config voucher=" << itemToString(cfg.voucher)
             << " pack=" << itemToString(cfg.pack) << " tag1=" << itemToString(cfg.tag1)
-            << " tag2=" << itemToString(cfg.tag2) << " souls=" << cfg.souls
-            << " observatory=" << format_bool(cfg.observatory)
+            << " tag2=" << itemToString(cfg.tag2) << " joker=" << itemToString(cfg.joker)
+            << " souls=" << cfg.souls << " observatory=" << format_bool(cfg.observatory)
             << " perkeo=" << format_bool(cfg.perkeo) << " deck=" << itemToString(cfg.deck)
-            << " erratic=" << format_bool(cfg.erratic) << " no_faces=" << format_bool(cfg.no_faces)
+            << " erratic=" << format_bool(cfg.erratic)
+            << " no_faces=" << format_bool(cfg.no_faces)
             << " min_face_cards=" << cfg.min_face_cards << " suit_ratio=" << cfg.suit_ratio;
         // cpp_log(oss.str());
     }

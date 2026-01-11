@@ -1,4 +1,4 @@
-# Brainstorm v3.0 – Balatro Seed Finder
+# Brainstorm with Joker search, Erratic deck search, Save states etc.
 
 Brainstorm is a Balatro mod that rapidly searches for seeds matching voucher/pack/tag filters and integrates directly into the game loop via Lua + a native DLL.
 
@@ -19,10 +19,11 @@ If you do not want to build from source, skip to "Installation (no build)" below
 ## Credits
 - Brainstorm created by OceanRamen.
 - Immolate native DLL created by MathIsFun0.
+- I mostly finished the Immolate cpp-rewrite and ported functionality that was left unfinished and added the Joker search and stuff. The LLM was pretty shit at doing it itself so there was a lot of wrangling involved lol
 
 ## Features
 - Auto-reroll with dual-tag support (order-agnostic or same-tag-twice).
-- First-shop filters: voucher, two pack slots (e.g., Mega Spectral), observatory (Telescope + Mega Celestial), Perkeo (Investment tag + soul).
+- First-shop filters: voucher, two pack slots (e.g., Mega Spectral), specific Joker in shop slots or Buffoon packs, observatory (Telescope + Mega Celestial), Perkeo (The Soul rolls Perkeo).
 - Save/load state (Z/X + 1-5), reroll hotkeys (Ctrl+R, Ctrl+A), settings UI (Ctrl+T).
 
 ## Requirements
@@ -49,7 +50,7 @@ You can copy these from a release zip (e.g. `release/Brainstorm_v3.0.zip`) or fr
 ## Usage
 - Open settings: Ctrl+T. Toggle auto-reroll: Ctrl+A. Manual reroll: Ctrl+R.
 - Save/load state: Z/X + 1-5.
-- Configure filters: dual tags, voucher, pack (two shop slots), souls, observatory, Perkeo.
+- Configure filters: dual tags, voucher, pack (two shop slots), Joker, souls, observatory, Perkeo.
 
 ## Troubleshooting
 - Missing DLL or wrong build: rerun `make build` and `make deploy`.

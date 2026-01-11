@@ -104,9 +104,14 @@ verifying in `BalatroSource/`.
     `joker_rate`, `tarot_rate`, `planet_rate`, `playing_card_rate`,
     `spectral_rate`.
   - Selection uses `pseudorandom(pseudoseed('cdt'..ante))` against total rate.
+  - Shop cards call `create_card(..., key_append='sho')`, so Joker rarity uses
+    `pseudorandom('rarity'..ante..'sho')` and Joker pools use
+    `Joker<rarity>sho<ante>`.
   - If `v_illusion` is used, playing-card type can flip between `Base` and
     `Enhanced` via `pseudorandom(pseudoseed('illusion'))`.
-  (See `create_card_for_shop` in `BalatroSource/functions/UI_definitions.lua`.)
+  (See `create_card_for_shop` in `BalatroSource/functions/UI_definitions.lua`
+  and `create_card` / `get_current_pool` in
+  `BalatroSource/functions/common_events.lua`.)
 - `create_card(_type, ...)`:
   - Pulls from pools using `get_current_pool` + `pseudorandom_element` and
     resamples on `'UNAVAILABLE'`.
@@ -122,7 +127,8 @@ verifying in `BalatroSource/`.
   - `G.GAME.current_round.used_packs` is reset to `{}` each round
     (see `new_round` in `BalatroSource/functions/state_events.lua`).
   - When the shop opens, each pack slot sets `used_packs[i] = get_pack('shop_pack').key`
-    if unset (see shop creation in `BalatroSource/game.lua`).
+    if unset (see shop creation in `BalatroSource/game.lua`); repeated calls
+    advance the same `shop_pack..ante` RNG key.
   - Pack cards are created only if `used_packs[i] ~= 'USED'`.
 - `get_pack(_key, _type)`:
   - First shop pack is forced to Buffoon if `G.GAME.first_shop_buffoon` is false
@@ -143,11 +149,27 @@ verifying in `BalatroSource/`.
     `stdseal`, and `stdsealtype` seeds.
   - Buffoon packs: Card type is Joker.
   (See `Card:open` in `BalatroSource/card.lua`.)
+- Buffoon pack sizing (from `G.P_CENTERS`):
+  - Normal Buffoon: `extra = 2`, `choose = 1`.
+  - Jumbo Buffoon: `extra = 4`, `choose = 1`.
+  - Mega Buffoon: `extra = 4`, `choose = 2`.
+  (See `p_buffoon_*` entries in `BalatroSource/game.lua`.)
+- Pack RNG key appends (used as `key_append` in `create_card`):
+  - Arcana Tarot: `ar1`; Arcana via Omen Globe (Spectral): `ar2`.
+  - Celestial: `pl1`. Spectral: `spe`. Standard: `sta`. Buffoon: `buf`.
+  (See `Card:open` in `BalatroSource/card.lua`.)
 - Soul cards:
   - In `create_card`, if the card is "soulable" and the relevant key is not
     banned, then `pseudorandom('soul_'.._type..ante) > 0.997` can force
     `c_soul` (Tarot/Spectral/Tarot_Planet) or `c_black_hole` (Planet/Spectral).
   (See `create_card` in `BalatroSource/functions/common_events.lua`.)
+- Using `The Soul`:
+  - `Card:use_consumeable` calls `create_card('Joker', ..., legendary=true, key_append='sou')`.
+  - Legendary selection uses `get_current_pool('Joker', ..., _legendary=true)` which picks from
+    `G.P_JOKER_RARITY_POOLS[4]` with pool key `Joker4` and **no** ante suffix.
+  - Joker editions for this path use `poll_edition('edi'..'sou'..ante)`.
+  (See `Card:use_consumeable` in `BalatroSource/card.lua` and `create_card` /
+  `get_current_pool` in `BalatroSource/functions/common_events.lua`.)
 
 ## Erratic Deck
 - The Erratic deck sets `G.GAME.starting_params.erratic_suits_and_ranks = true`
