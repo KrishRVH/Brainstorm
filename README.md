@@ -1,4 +1,5 @@
 # Brainstorm with Joker search, Erratic deck search, Save states etc.
+<img width="1536" height="864" alt="Brainstorm 3" src="https://github.com/user-attachments/assets/68a97977-3c80-4259-9378-58540a7b749e" />
 
 Brainstorm is a Balatro mod that rapidly searches for seeds matching voucher/pack/tag filters and integrates directly into the game loop via Lua + a native DLL.
 
