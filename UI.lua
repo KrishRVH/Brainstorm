@@ -88,6 +88,30 @@ local pack_list = {
   ["Mega Spectral"] = { "p_spectral_mega_1" },
 }
 
+local function build_sorted_keys(list)
+  local keys = {}
+  for key in pairs(list) do
+    keys[#keys + 1] = key
+  end
+  table.sort(keys, function(a, b)
+    if a == b then
+      return false
+    end
+    if a == "None" then
+      return true
+    end
+    if b == "None" then
+      return false
+    end
+    return a < b
+  end)
+  return keys
+end
+
+local tag_keys = build_sorted_keys(tag_list)
+local voucher_keys = build_sorted_keys(voucher_list)
+local pack_keys = build_sorted_keys(pack_list)
+
 local joker_list = { ["None"] = "" }
 local joker_keys = { "None" }
 
@@ -185,63 +209,6 @@ local ratio_list = {
 
 local ratio_keys = { "Disabled", "50%", "60%", "65%", "70%", "75%" }
 
-local voucher_keys = {
-  "None",
-  "Overstock",
-  "Clearance Sale",
-  "Hone",
-  "Reroll Surplus",
-  "Crystal Ball",
-  "Telescope",
-  "Grabber",
-  "Wasteful",
-  "Tarot Merchant",
-  "Planet Merchant",
-  "Seed Money",
-  "Blank",
-  "Magic Trick",
-  "Hieroglyph",
-  "Director's Cut",
-  "Paint Brush",
-}
-
-local tag_keys = {
-  "None",
-  "Charm Tag",
-  "Double Tag",
-  "Uncommon Tag",
-  "Rare Tag",
-  "Holographic Tag",
-  "Foil Tag",
-  "Polychrome Tag",
-  "Investment Tag",
-  "Voucher Tag",
-  "Boss Tag",
-  "Juggle Tag",
-  "Coupon Tag",
-  "Economy Tag",
-  "Speed Tag",
-  "D6 Tag",
-}
-local pack_keys = {
-  "None",
-  "Normal Arcana",
-  "Jumbo Arcana",
-  "Mega Arcana",
-  "Normal Celestial",
-  "Jumbo Celestial",
-  "Mega Celestial",
-  "Normal Standard",
-  "Jumbo Standard",
-  "Mega Standard",
-  "Normal Buffoon",
-  "Jumbo Buffoon",
-  "Mega Buffoon",
-  "Normal Spectral",
-  "Jumbo Spectral",
-  "Mega Spectral",
-}
-
 local function clamp_index(index, max_value)
   if type(index) ~= "number" then
     return 1
@@ -263,6 +230,65 @@ local function option_index_for_value(options, value)
   for i, option in ipairs(options) do
     if option == value then
       return i
+    end
+  end
+  return 1
+end
+
+local function option_index_for_mapping(options, mapping, value)
+  if value == nil or value == "" then
+    return 1
+  end
+  for i, option in ipairs(options) do
+    if mapping[option] == value then
+      return i
+    end
+  end
+  return 1
+end
+
+local function pack_list_matches(a, b)
+  if a == b then
+    return true
+  end
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return false
+  end
+  if #a ~= #b then
+    return false
+  end
+  for i = 1, #a do
+    if a[i] ~= b[i] then
+      return false
+    end
+  end
+  return true
+end
+
+local function option_index_for_pack(options, pack_value)
+  if pack_value == nil then
+    return 1
+  end
+  if pack_value == "" then
+    pack_value = {}
+  end
+  for i, option in ipairs(options) do
+    local candidate = pack_list[option]
+    if type(pack_value) == "table" then
+      if pack_list_matches(candidate, pack_value) then
+        return i
+      end
+    else
+      if candidate == pack_value then
+        return i
+      end
+      if type(candidate) == "table" then
+        for j = 1, #candidate do
+          if candidate[j] == pack_value then
+            return i
+          end
+        end
+      end
     end
   end
   return 1
@@ -453,6 +479,23 @@ function create_tabs(args)
           joker_location_option =
             location_index_for_value(config.ar_filters.joker_location)
         end
+        local tag_option = option_index_for_mapping(
+          tag_keys,
+          tag_list,
+          config.ar_filters.tag_name
+        )
+        local tag2_option = option_index_for_mapping(
+          tag_keys,
+          tag_list,
+          config.ar_filters.tag2_name
+        )
+        local voucher_option = option_index_for_mapping(
+          voucher_keys,
+          voucher_list,
+          config.ar_filters.voucher_name
+        )
+        local pack_option =
+          option_index_for_pack(pack_keys, config.ar_filters.pack)
         return {
           n = G.UIT.ROOT,
           config = {
@@ -476,7 +519,7 @@ function create_tabs(args)
                   w = 4,
                   options = tag_keys,
                   opt_callback = "change_target_tag",
-                  current_option = Brainstorm.config.ar_filters.tag_id or 1,
+                  current_option = tag_option,
                 }),
                 create_option_cycle({
                   label = "AR: TAG 2 SEARCH",
@@ -484,7 +527,7 @@ function create_tabs(args)
                   w = 4,
                   options = tag_keys,
                   opt_callback = "change_target_tag2",
-                  current_option = Brainstorm.config.ar_filters.tag2_id or 1,
+                  current_option = tag2_option,
                 }),
                 create_option_cycle({
                   label = "AR: VOUCHER SEARCH",
@@ -492,7 +535,7 @@ function create_tabs(args)
                   w = 4,
                   options = voucher_keys,
                   opt_callback = "change_target_voucher",
-                  current_option = Brainstorm.config.ar_filters.voucher_id or 1,
+                  current_option = voucher_option,
                 }),
                 create_option_cycle({
                   label = "AR: PACK SEARCH",
@@ -500,7 +543,7 @@ function create_tabs(args)
                   w = 4,
                   options = pack_keys,
                   opt_callback = "change_target_pack",
-                  current_option = Brainstorm.config.ar_filters.pack_id or 1,
+                  current_option = pack_option,
                 }),
                 {
                   n = G.UIT.R,
