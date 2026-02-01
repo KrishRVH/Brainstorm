@@ -4,4 +4,4 @@
 --- PREFIX: brainstorm
 --- MOD_AUTHOR: [OceanRamen]
 --- MOD_DESCRIPTION: The Balatro Reroll Mod. Rewrite by KRVH, Immolate by MathIsFun0
---- VERSION: v3.0
+--- VERSION: 3.0
