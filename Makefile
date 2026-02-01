@@ -2,8 +2,8 @@ SHELL := /bin/bash
 
 IMMO_DIR := Immolate
 DLL := Immolate.dll
-RELEASE_DIR := release/Brainstorm_v3.0
-RELEASE_ZIP := release/Brainstorm_v3.0.zip
+RELEASE_DIR := release/Brainstorm_v3.1
+RELEASE_ZIP := release/Brainstorm_v3.1.zip
 TARGET ?= /mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm
 
 # Update IMMO_SOURCES when adding or removing native files.
@@ -64,9 +64,9 @@ release: build
 	@mkdir -p $(RELEASE_DIR)
 	@cp $(MOD_FILES) $(RELEASE_DIR)/
 	@cp $(DLL) $(RELEASE_DIR)/
-	@echo "3.0.0" > $(RELEASE_DIR)/VERSION
+	@echo "3.1" > $(RELEASE_DIR)/VERSION
 	@date >> $(RELEASE_DIR)/VERSION
-	@if command -v zip >/dev/null; then (cd release && zip -r Brainstorm_v3.0.zip Brainstorm_v3.0 >/dev/null); else echo "zip not found"; fi
+	@if command -v zip >/dev/null; then (cd release && zip -r Brainstorm_v3.1.zip Brainstorm_v3.1 >/dev/null); else echo "zip not found"; fi
 
 deploy: build
 	@echo "Deploying to $(TARGET)"

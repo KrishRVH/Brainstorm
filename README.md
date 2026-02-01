@@ -37,10 +37,10 @@ This project is licensed under CC BY-NC-SA 4.0.
 - Write access to `%AppData%\Roaming\Balatro\Mods`.
 
 ## Build & Deploy (from source)
-**Release packaging:** `make release` (builds the DLL, creates `release/Brainstorm_v3.0.zip`).
+**Release packaging:** `make release` (builds the DLL, creates `release/Brainstorm_v3.1.zip`).
 
 ## Installation (no build)
-Download the latest release zip from https://github.com/KrishRVH/Brainstorm/releases/tag/3.0.0 and extract it into `%AppData%\Roaming\Balatro\Mods\Brainstorm\` (same payload as `make deploy`).
+Download the latest release zip from https://github.com/KrishRVH/Brainstorm/releases/tag/3.1 and extract it into `%AppData%\Roaming\Balatro\Mods\Brainstorm\` (same payload as `make deploy`).
 The folder name must be `Brainstorm`.
 Reload the game to activate the mod.
 
@@ -55,7 +55,7 @@ Brainstorm/
 ├── nativefs.lua
 └── steamodded_compat.lua
 ```
-You can copy these from a release zip (e.g. `release/Brainstorm_v3.0.zip`) or from the repo after someone provides `Immolate.dll`.
+You can copy these from a release zip (e.g. `release/Brainstorm_v3.1.zip`) or from the repo after someone provides `Immolate.dll`.
 ## Usage
 - Open settings: Ctrl+T. Toggle auto-reroll: Ctrl+A. Manual reroll: Ctrl+R.
 - Save/load state: Z/X + 1-5.

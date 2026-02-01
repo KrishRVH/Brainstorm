@@ -11,7 +11,7 @@ local ffi = require("ffi")
 Brainstorm = {}
 
 -- Mod version
-Brainstorm.VERSION = "Brainstorm v3.0.0"
+Brainstorm.VERSION = "Brainstorm v3.1"
 
 -- Reserved for Steammodded compatibility
 Brainstorm.SMODS = nil
@@ -75,7 +75,6 @@ Brainstorm.RATIO_MAP = {
   ["75%"] = 0.75,
   ["80%"] = 0.8,
   ["85%"] = 0.85,
-  ["90%"] = 0.9,
 }
 
 -- Constants

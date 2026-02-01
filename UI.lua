@@ -209,11 +209,10 @@ local ratio_list = {
   ["75%"] = 0.75, -- Extremely rare
   ["80%"] = 0.8, -- Likely impossible, but allowed
   ["85%"] = 0.85, -- Likely impossible, but allowed
-  ["90%"] = 0.9, -- Likely impossible, but allowed
 }
 
 local ratio_keys =
-  { "Disabled", "50%", "60%", "65%", "70%", "75%", "80%", "85%", "90%" }
+  { "Disabled", "50%", "60%", "65%", "70%", "75%", "80%", "85%" }
 
 local function clamp_index(index, max_value)
   if type(index) ~= "number" then
@@ -660,8 +659,8 @@ function create_tabs(args)
                   w = 4,
                   options = (function()
                     local opts = {}
-                    -- UI max is 30; above 25 is extremely rare.
-                    for i = 0, 30 do
+                    -- UI max is 35; 32+ is extremely rare (untested).
+                    for i = 0, 35 do
                       opts[#opts + 1] = i
                     end
                     return opts

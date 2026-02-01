@@ -17,7 +17,7 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 ## Build and Development Commands
 - Build: `make build` outputs `Immolate.dll`.
 - Deploy: `make deploy TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm`.
-- Release: `make release` (builds the DLL and zips `release/Brainstorm_v3.0.zip`).
+- Release: `make release` (builds the DLL and zips `release/Brainstorm_v3.1.zip`).
 - Formatting: `make format` (runs stylua/clang-format when available).
 - Lint: `make lint` (stylua/clang-format checks when available).
 - Clean: `make clean`.
