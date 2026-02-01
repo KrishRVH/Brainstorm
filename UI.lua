@@ -1,6 +1,6 @@
 -- Brainstorm UI Module
 -- Provides the settings interface and configuration callbacks
--- Created by OceanRamen. Immolate DLL by MathIsFun0.
+-- Created by OceanRamen. Rewrite by KRVH. Immolate DLL by MathIsFun0.
 
 local lovely = require("lovely")
 local nativefs = require("nativefs")
@@ -180,6 +180,7 @@ local spf_list = {
   ["10000"] = 10000, -- Aggressive
   ["25000"] = 25000, -- Extreme
   ["50000"] = 50000, -- Use with care
+  ["100000"] = 100000, -- Very likely to lag
 }
 
 local spf_keys = {
@@ -194,6 +195,7 @@ local spf_keys = {
   "10000",
   "25000",
   "50000",
+  "100000",
 }
 
 -- Suit ratio options for Erratic deck filtering
@@ -204,10 +206,14 @@ local ratio_list = {
   ["60%"] = 0.6, -- Uncommon
   ["65%"] = 0.65, -- Rare
   ["70%"] = 0.7, -- Very rare
-  ["75%"] = 0.75, -- Extremely rare (maximum achievable)
+  ["75%"] = 0.75, -- Extremely rare
+  ["80%"] = 0.8, -- Likely impossible, but allowed
+  ["85%"] = 0.85, -- Likely impossible, but allowed
+  ["90%"] = 0.9, -- Likely impossible, but allowed
 }
 
-local ratio_keys = { "Disabled", "50%", "60%", "65%", "70%", "75%" }
+local ratio_keys =
+  { "Disabled", "50%", "60%", "65%", "70%", "75%", "80%", "85%", "90%" }
 
 local function clamp_index(index, max_value)
   if type(index) ~= "number" then
@@ -401,9 +407,9 @@ G.FUNCS.reset_brainstorm_settings = function()
   config.ar_prefs.suit_ratio_percent = "Disabled"
   config.ar_prefs.suit_ratio_decimal = ratio_list["Disabled"] or 0
   config.ar_prefs.suit_ratio_id = option_index_for_value(ratio_keys, "Disabled")
-  local default_spf_key = "500"
+  local default_spf_key = "100000"
   config.ar_prefs.spf_id = option_index_for_value(spf_keys, default_spf_key)
-  config.ar_prefs.spf_int = spf_list[default_spf_key] or 500
+  config.ar_prefs.spf_int = spf_list[default_spf_key] or 100000
 
   write_config()
   refresh_brainstorm_tab()
@@ -654,9 +660,8 @@ function create_tabs(args)
                   w = 4,
                   options = (function()
                     local opts = {}
-                    -- Maximum realistic face cards is 23
-                    -- (25 is theoretically possible but extremely rare)
-                    for i = 0, 23 do
+                    -- UI max is 30; above 25 is extremely rare.
+                    for i = 0, 30 do
                       opts[#opts + 1] = i
                     end
                     return opts

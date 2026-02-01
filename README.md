@@ -20,7 +20,7 @@ If you do not want to build from source, skip to "Installation (no build)" below
 ## Credits
 This project is licensed under CC BY-NC-SA 4.0.
 
-- Brainstorm created by OceanRamen. The basis (Lua) are derived from https://github.com/OceanRamen/Brainstorm which is licensed under the Mozilla Public License Version 2.0
+- Brainstorm created by OceanRamen. Rewrite by KRVH. The basis (Lua) are derived from https://github.com/OceanRamen/Brainstorm which is licensed under the Mozilla Public License Version 2.0
 - Immolate native DLL source created by MathIsFun0. Project is CC BY-NC-SA 4.0 accordingly to be compliant with his source: https://github.com/SpectralPack/Immolate/tree/26f41efcc313f045bc8bdbf49e5851c56ac40b31
 - I mostly finished the Immolate cpp-rewrite and ported functionality that was left unfinished and added the Joker search and stuff. The LLM I used was pretty shit at doing it itself so there was a lot of wrangling involved lol
 

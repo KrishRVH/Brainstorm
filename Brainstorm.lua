@@ -1,6 +1,6 @@
 -- Brainstorm Mod for Balatro
 -- High-performance seed filtering and save state management
--- Created by OceanRamen. Immolate DLL by MathIsFun0.
+-- Created by OceanRamen. Rewrite by KRVH. Immolate DLL by MathIsFun0.
 -- License: MIT
 -- Entry point loaded by lovely.toml; initializes config, UI, and game hooks.
 
@@ -70,9 +70,12 @@ Brainstorm.RATIO_MAP = {
   ["Disabled"] = 0,
   ["50%"] = 0.5,
   ["60%"] = 0.6,
+  ["65%"] = 0.65,
   ["70%"] = 0.7,
   ["75%"] = 0.75,
-  ["80%"] = 0.80, -- 80% is mathematically impossible but kept for compatibility
+  ["80%"] = 0.8,
+  ["85%"] = 0.85,
+  ["90%"] = 0.9,
 }
 
 -- Constants
