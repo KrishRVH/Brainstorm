@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 IMMO_DIR := Immolate
-RUST_DIR := Rust
+RUST_DIR := Immolate/Rust
 DLL := Immolate.dll
 RELEASE_DIR := release/Brainstorm_v3.1
 RELEASE_ZIP := release/Brainstorm_v3.1.zip
@@ -9,15 +9,45 @@ TARGET ?= /mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm
 RUST_TARGET ?= x86_64-pc-windows-gnu
 TARGET_DIR := target
 CPP_DLL := $(TARGET_DIR)/cpp/$(DLL)
-RUST_DLL := $(RUST_DIR)/target/$(RUST_TARGET)/release/immolate.dll
+RUST_CARGO_TARGET_DIR := $(RUST_DIR)/target
+RUST_V1_CARGO_TARGET_DIR := $(TARGET_DIR)/cargo-rust-v1
+RUST_V2_CARGO_TARGET_DIR := $(TARGET_DIR)/cargo-rust-v2
+RUST_DLL := $(RUST_CARGO_TARGET_DIR)/$(RUST_TARGET)/release/immolate.dll
+RUST_V1_DLL := $(RUST_V1_CARGO_TARGET_DIR)/$(RUST_TARGET)/release/immolate.dll
+RUST_V2_DLL := $(RUST_V2_CARGO_TARGET_DIR)/$(RUST_TARGET)/release/immolate.dll
 RUST_ARTIFACT_DIR := $(TARGET_DIR)/rust
 RUST_ARTIFACT := $(RUST_ARTIFACT_DIR)/$(DLL)
+RUST_V1_ARTIFACT_DIR := $(TARGET_DIR)/rust-v1
+RUST_V1_ARTIFACT := $(RUST_V1_ARTIFACT_DIR)/$(DLL)
+RUST_V2_ARTIFACT_DIR := $(TARGET_DIR)/rust-v2
+RUST_V2_ARTIFACT := $(RUST_V2_ARTIFACT_DIR)/$(DLL)
+RUST_BASE_DLL ?=
+RUST_CANDIDATE_DLL ?=
 HARNESS_EXE := $(RUST_DIR)/target/$(RUST_TARGET)/release/immolate_dll_harness.exe
 BENCH_CASE ?= all
 BENCH_BUDGET ?= 1000000
 BENCH_THREADS ?= 1
 BENCH_REPEAT ?= 5
+BENCH_WARMUP ?= 1
 BENCH_MIN_RATIO ?= 0.8
+BENCH_CANDIDATE_MIN_RATIO ?= 0
+BENCH_CANDIDATE_MIN_SCAN_PCT ?= 0.95
+BENCH_FORMAT ?= pretty
+BENCH_COLOR ?= auto
+DOLLAR := $$
+SINGLE_QUOTE := '
+DOUBLE_QUOTE := "
+BACKTICK := `
+
+define validate_dll_override
+$(if $(findstring $(SINGLE_QUOTE),$(value $(1))),$(error $(1) must not contain quote/backtick/dollar characters))
+$(if $(findstring $(DOUBLE_QUOTE),$(value $(1))),$(error $(1) must not contain quote/backtick/dollar characters))
+$(if $(findstring $(BACKTICK),$(value $(1))),$(error $(1) must not contain quote/backtick/dollar characters))
+$(if $(findstring $(DOLLAR),$(value $(1))),$(error $(1) must not contain quote/backtick/dollar characters))
+endef
+
+$(eval $(call validate_dll_override,RUST_BASE_DLL))
+$(eval $(call validate_dll_override,RUST_CANDIDATE_DLL))
 
 # Update IMMO_SOURCES when adding or removing native files.
 IMMO_SOURCES := brainstorm.cpp functions.cpp rng.cpp seed.cpp util.cpp
@@ -28,17 +58,20 @@ MOD_FILES := Brainstorm.lua UI.lua config.lua lovely.toml nativefs.lua steamodde
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build build-cpp build-rust build-harness format-rust-check clippy-rust check-rust-dll compare bench bench-rust bench-cpp bench-compare check-rust test-rust clean format lint release deploy
+.PHONY: help build build-cpp build-rust build-rust-v1 build-rust-v2 build-harness format-rust-check clippy-rust check-rust-dll compare bench bench-rust bench-cpp bench-compare check-rust test-rust clean format lint release deploy
 
 help:
 	@echo "Targets:"
 	@echo "  build      Build $(DLL) with the Rust implementation"
 	@echo "  build-cpp  Build C++ oracle DLL to $(CPP_DLL) and $(DLL)"
 	@echo "  build-rust Build Rust DLL to $(DLL)"
+	@echo "  build-rust-v1 Build legacy Rust V1 DLL to $(RUST_V1_ARTIFACT)"
+	@echo "  build-rust-v2 Build Rust V2 DLL comparison artifact to $(RUST_V2_ARTIFACT)"
 	@echo "  compare    Compare C++ and Rust DLL ABI results under Wine"
 	@echo "  bench      Benchmark the Rust DLL under Wine"
 	@echo "  bench-cpp  Benchmark the C++ DLL under Wine"
 	@echo "  bench-compare Benchmark C++ then Rust DLL under Wine"
+	@echo "             Knobs: BENCH_CASE=all|group|case BENCH_BUDGET=... BENCH_REPEAT=... BENCH_WARMUP=... BENCH_FORMAT=pretty|tsv RUST_BASE_DLL=... RUST_CANDIDATE_DLL=... BENCH_CANDIDATE_MIN_RATIO=..."
 	@echo "  check-rust Run Rust format, clippy, tests, DLL validation, compare, and bench smoke"
 	@echo "  test-rust  Run Rust unit tests"
 	@echo "  format     Format Lua/C++/Rust (if tools installed)"
@@ -80,6 +113,26 @@ build-rust:
 	@cp "$(RUST_DLL)" "$(RUST_ARTIFACT)"
 	@cp "$(RUST_DLL)" "$(DLL)"
 
+build-rust-v1:
+	@echo "Building legacy Rust V1 $(DLL)"
+	@if ! rustup target list --installed | grep -qx "$(RUST_TARGET)"; then \
+		echo "Rust target $(RUST_TARGET) not installed. Run: rustup target add $(RUST_TARGET)"; \
+		exit 1; \
+	fi
+	@CARGO_TARGET_DIR="$(RUST_V1_CARGO_TARGET_DIR)" cargo build --manifest-path $(RUST_DIR)/Cargo.toml --release --target $(RUST_TARGET) --features v1-legacy
+	@mkdir -p "$(RUST_V1_ARTIFACT_DIR)"
+	@cp "$(RUST_V1_DLL)" "$(RUST_V1_ARTIFACT)"
+
+build-rust-v2:
+	@echo "Building Rust V2 comparison $(DLL)"
+	@if ! rustup target list --installed | grep -qx "$(RUST_TARGET)"; then \
+		echo "Rust target $(RUST_TARGET) not installed. Run: rustup target add $(RUST_TARGET)"; \
+		exit 1; \
+	fi
+	@CARGO_TARGET_DIR="$(RUST_V2_CARGO_TARGET_DIR)" cargo build --manifest-path $(RUST_DIR)/Cargo.toml --release --target $(RUST_TARGET)
+	@mkdir -p "$(RUST_V2_ARTIFACT_DIR)"
+	@cp "$(RUST_V2_DLL)" "$(RUST_V2_ARTIFACT)"
+
 build-harness:
 	@echo "Building Rust DLL harness"
 	@if ! rustup target list --installed | grep -qx "$(RUST_TARGET)"; then \
@@ -120,9 +173,16 @@ check-rust-dll: build-rust
 	done
 
 compare: build-cpp build-rust build-harness
-	@wine "$(HARNESS_EXE)" compare \
+	@base_dll="$(RUST_ARTIFACT)"; \
+	if [ -n "$(value RUST_BASE_DLL)" ]; then base_dll="$(value RUST_BASE_DLL)"; fi; \
+	candidate_args=(); \
+	if [ -n "$(value RUST_CANDIDATE_DLL)" ]; then \
+		candidate_args=(--rust-candidate "$$(winepath -w "$$(readlink -f "$(value RUST_CANDIDATE_DLL)")")"); \
+	fi; \
+	wine "$(HARNESS_EXE)" compare \
 		--cpp "$$(winepath -w "$$(readlink -f "$(CPP_DLL)")")" \
-		--rust "$$(winepath -w "$$(readlink -f "$(RUST_ARTIFACT)")")" \
+		--rust-base "$$(winepath -w "$$(readlink -f "$$base_dll")")" \
+		"$${candidate_args[@]}" \
 		--threads 1
 
 bench: bench-rust
@@ -133,7 +193,10 @@ bench-rust: build-rust build-harness
 		--case "$(BENCH_CASE)" \
 		--budget "$(BENCH_BUDGET)" \
 		--threads "$(BENCH_THREADS)" \
-		--repeat "$(BENCH_REPEAT)"
+		--repeat "$(BENCH_REPEAT)" \
+		--warmup "$(BENCH_WARMUP)" \
+		--format "$(BENCH_FORMAT)" \
+		--color "$(BENCH_COLOR)"
 
 bench-cpp: build-cpp build-harness
 	@wine "$(HARNESS_EXE)" bench \
@@ -141,17 +204,32 @@ bench-cpp: build-cpp build-harness
 		--case "$(BENCH_CASE)" \
 		--budget "$(BENCH_BUDGET)" \
 		--threads "$(BENCH_THREADS)" \
-		--repeat "$(BENCH_REPEAT)"
+		--repeat "$(BENCH_REPEAT)" \
+		--warmup "$(BENCH_WARMUP)" \
+		--format "$(BENCH_FORMAT)" \
+		--color "$(BENCH_COLOR)"
 
 bench-compare: build-cpp build-rust build-harness
-	@wine "$(HARNESS_EXE)" bench-compare \
+	@base_dll="$(RUST_ARTIFACT)"; \
+	if [ -n "$(value RUST_BASE_DLL)" ]; then base_dll="$(value RUST_BASE_DLL)"; fi; \
+	candidate_args=(); \
+	if [ -n "$(value RUST_CANDIDATE_DLL)" ]; then \
+		candidate_args=(--rust-candidate "$$(winepath -w "$$(readlink -f "$(value RUST_CANDIDATE_DLL)")")"); \
+	fi; \
+	wine "$(HARNESS_EXE)" bench-compare \
 		--cpp "$$(winepath -w "$$(readlink -f "$(CPP_DLL)")")" \
-		--rust "$$(winepath -w "$$(readlink -f "$(RUST_ARTIFACT)")")" \
+		--rust-base "$$(winepath -w "$$(readlink -f "$$base_dll")")" \
+		"$${candidate_args[@]}" \
 		--case "$(BENCH_CASE)" \
 		--budget "$(BENCH_BUDGET)" \
 		--threads "$(BENCH_THREADS)" \
 		--repeat "$(BENCH_REPEAT)" \
-		--min-ratio "$(BENCH_MIN_RATIO)"
+		--warmup "$(BENCH_WARMUP)" \
+		--min-ratio "$(BENCH_MIN_RATIO)" \
+		--candidate-min-ratio "$(BENCH_CANDIDATE_MIN_RATIO)" \
+		--candidate-min-scan-pct "$(BENCH_CANDIDATE_MIN_SCAN_PCT)" \
+		--format "$(BENCH_FORMAT)" \
+		--color "$(BENCH_COLOR)"
 
 check-rust: format-rust-check clippy-rust test-rust check-rust-dll compare
 	@$(MAKE) bench-compare BENCH_BUDGET=1000 BENCH_REPEAT=1 BENCH_CASE=pack-miss BENCH_MIN_RATIO=0.8
@@ -160,7 +238,7 @@ test-rust:
 	@cargo test --manifest-path $(RUST_DIR)/Cargo.toml
 
 clean:
-	@rm -rf $(IMMO_DIR)/build $(DLL) release $(TARGET_DIR)/cpp $(RUST_ARTIFACT_DIR)
+	@rm -rf $(IMMO_DIR)/build $(DLL) release $(TARGET_DIR)/cpp $(RUST_ARTIFACT_DIR) $(RUST_V1_ARTIFACT_DIR) $(RUST_V2_ARTIFACT_DIR) $(RUST_V1_CARGO_TARGET_DIR) $(RUST_V2_CARGO_TARGET_DIR)
 
 format:
 	@if command -v stylua >/dev/null; then stylua .; else echo "stylua not found"; fi

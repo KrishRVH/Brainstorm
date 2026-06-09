@@ -5,7 +5,10 @@ use std::os::raw::{c_char, c_double, c_int, c_longlong};
 use std::ptr;
 
 use crate::filters::FilterConfig;
+#[cfg(feature = "v1-legacy")]
 use crate::search::brainstorm_search_core;
+#[cfg(not(feature = "v1-legacy"))]
+use crate::v2::brainstorm_search_core_v2 as brainstorm_search_core;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn brainstorm_search(

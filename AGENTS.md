@@ -8,7 +8,7 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 
 ## Project Structure & Module Organization
 - Lua entry/UI: `Brainstorm.lua`, `UI.lua`; config/compat in `config.lua`, `lovely.toml`, `nativefs.lua`, `steamodded_compat.lua`.
-- Native sources: `Rust/` is the primary Rust DLL implementation. `Immolate/*.cpp` and `Immolate/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/brainstorm.cpp`).
+- Native sources: `Immolate/Rust/` is the primary Rust DLL implementation. `Immolate/*.cpp` and `Immolate/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/brainstorm.cpp`).
 - Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use the repo `Makefile`; C++ and Rust oracle artifacts are kept under `target/cpp/` and `target/rust/`.
 - `BalatroSource/` is the literal game source; never commit it to git and always use it as the source of truth for understanding game behavior.
 - `BalatroSource_Guide.md` summarizes seed/search-relevant mechanics verified from `BalatroSource/`.

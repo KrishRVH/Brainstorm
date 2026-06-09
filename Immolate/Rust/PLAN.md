@@ -19,16 +19,16 @@ where that does not change observable behavior. The user-facing contract is:
 - Null means no matching seed was found in the scanned budget.
 - Current first-shop search behavior remains compatible with the mod.
 
-The rewrite must keep the C++ implementation buildable as a legacy oracle while
-Rust becomes the default DLL build only after parity and performance gates are
-green.
+The rewrite keeps the C++ implementation buildable as a legacy oracle while
+Rust is the default DLL build. Candidate promotion still requires parity and
+performance gates before release/deploy work.
 
 ## Current Repo Facts
 
 - Native C++ source lives in `Immolate/`.
-- Rust implementation lives in `Rust/` as the `immolate` crate. It builds both
+- Rust implementation lives in `Immolate/Rust/` as the `immolate` crate. It builds both
   an `rlib` for tests/harnesses and a Windows `cdylib` for the shipped DLL.
-- `Rust/Cargo.toml` uses Rust 2024, `rust-version = "1.96.0"`, release LTO,
+- `Immolate/Rust/Cargo.toml` uses Rust 2024, `rust-version = "1.96.0"`, release LTO,
   `panic = "abort"`, and a calibrated clippy profile for bit-exact numeric
   compatibility.
 - Current `Makefile` builds `Immolate.dll` from Rust by default. The C++ build
@@ -395,7 +395,7 @@ Use a two-layer design:
 Recommended module layout:
 
 ```text
-Rust/
+Immolate/Rust/
   Cargo.toml
   src/
     lib.rs
@@ -557,7 +557,7 @@ reference implementation.
 
 ### Cargo changes
 
-Update `Rust/Cargo.toml`:
+Update `Immolate/Rust/Cargo.toml`:
 
 ```toml
 [package]
@@ -596,10 +596,10 @@ make bench-compare   # run thresholded C++ vs Rust benchmark harness
 make check-rust      # format, clippy, tests, DLL validation, compare, smoke bench
 ```
 
-After parity:
+Current build shape:
 
 - Keep C++ available through `make build-cpp` as the oracle.
-- Make Rust the default `make build` path.
+- Rust is the default `make build` path.
 - Make `make release` and `make deploy` depend on `make check-rust` so they
   consume the Rust DLL only after parity and benchmark gates pass.
 - Preserve repo-root `Immolate.dll` as the mod payload location.
@@ -608,8 +608,8 @@ Example build command:
 
 ```bash
 rustup target add x86_64-pc-windows-gnu
-cargo build --manifest-path Rust/Cargo.toml --release --target x86_64-pc-windows-gnu
-cp Rust/target/x86_64-pc-windows-gnu/release/immolate.dll Immolate.dll
+cargo build --manifest-path Immolate/Rust/Cargo.toml --release --target x86_64-pc-windows-gnu
+cp Immolate/Rust/target/x86_64-pc-windows-gnu/release/immolate.dll Immolate.dll
 ```
 
 The exact DLL filename emitted by Cargo may depend on crate naming and target.
@@ -714,7 +714,7 @@ Runner requirements:
 - Use `threads=1` for exact result parity.
 - Emit stable tab-separated output for shell diffing and benchmark capture.
 
-The implemented harness lives at `Rust/src/bin/immolate_dll_harness.rs` and is
+The implemented harness lives at `Immolate/Rust/src/bin/immolate_dll_harness.rs` and is
 built as a Windows executable by `make build-harness`.
 
 ### Layer 4: trace parity
@@ -1182,11 +1182,11 @@ Each optimization must:
 
 ### Phase 8: make Rust default
 
-- Change `make build` to call `build-rust`.
+- `make build` calls `build-rust`.
 - Keep `make build-cpp` available.
 - Ensure `make release` and `make deploy` still package top-level
   `Immolate.dll`.
-- Update README build notes.
+- Keep build notes current.
 - Keep benchmark fixture generation documented.
 
 Exit criteria:
@@ -1213,15 +1213,15 @@ x86_64-w64-mingw32-objdump -p target/cpp/Immolate.dll
 Rust build:
 
 ```bash
-cargo build --manifest-path Rust/Cargo.toml --release --target x86_64-pc-windows-gnu
+cargo build --manifest-path Immolate/Rust/Cargo.toml --release --target x86_64-pc-windows-gnu
 ```
 
 Rust tests:
 
 ```bash
-cargo test --manifest-path Rust/Cargo.toml
-cargo clippy --manifest-path Rust/Cargo.toml --all-targets -- -D warnings
-cargo fmt --manifest-path Rust/Cargo.toml --check
+cargo test --manifest-path Immolate/Rust/Cargo.toml
+cargo clippy --manifest-path Immolate/Rust/Cargo.toml --all-targets -- -D warnings
+cargo fmt --manifest-path Immolate/Rust/Cargo.toml --check
 ```
 
 DLL compare:

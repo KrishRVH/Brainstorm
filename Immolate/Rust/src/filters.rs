@@ -368,6 +368,14 @@ pub fn parse_joker_name(name: &str) -> Item {
     if name.is_empty() {
         return Item::RETRY;
     }
+    let item = match name {
+        "j_caino" | "j_canio" => Item::Canio,
+        "j_seance" | "Seance" => Item::Seance,
+        _ => Item::RETRY,
+    };
+    if is_joker_item(item) {
+        return item;
+    }
     let item = string_to_item(name);
     if is_joker_item(item) {
         item

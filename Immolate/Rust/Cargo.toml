@@ -10,6 +10,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 
+[features]
+default = []
+v1-legacy = []
+
 # Practical strict-by-default linting baseline.
 [lints.rust]
 missing_docs = "allow"
