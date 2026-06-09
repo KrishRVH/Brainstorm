@@ -15,6 +15,8 @@
 build/
 Debug/
 Release/
+target/
+Rust/target/
 release/
 x64/
 x86/

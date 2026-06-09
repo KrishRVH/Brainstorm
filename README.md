@@ -33,11 +33,18 @@ This project is licensed under CC BY-NC-SA 4.0.
 ## Requirements
 - Balatro (Steam, Windows 64-bit).
 - Lovely injector (required): https://github.com/ethangreen-dev/lovely-injector
-- WSL2 for building/deploying from this repo (MinGW-w64).
+- WSL2 for building/deploying from this repo.
+- Rust 1.96+ with the Windows GNU target:
+```bash
+rustup target add x86_64-pc-windows-gnu
+```
+- MinGW-w64 and Wine are required for C++ oracle builds, DLL comparison, and benchmarks.
 - Write access to `%AppData%\Roaming\Balatro\Mods`.
 
 ## Build & Deploy (from source)
-**Release packaging:** `make release` (builds the DLL, creates `release/Brainstorm_v3.1.zip`).
+`make build` builds the Rust native DLL. `make build-cpp` still builds the legacy C++ oracle for parity checks. `make check-rust` runs Rust formatting, clippy, unit tests, DLL export/import validation, C++ vs Rust parity, and a benchmark regression smoke.
+
+**Release packaging:** `make release` (runs `make check-rust`, then creates `release/Brainstorm_v3.1.zip`).
 
 ## Installation (no build)
 Download the latest release zip from https://github.com/KrishRVH/Brainstorm/releases/tag/3.1 and extract it into `%AppData%\Roaming\Balatro\Mods\Brainstorm\` (same payload as `make deploy`).

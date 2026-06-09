@@ -1,10 +1,23 @@
 SHELL := /bin/bash
 
 IMMO_DIR := Immolate
+RUST_DIR := Rust
 DLL := Immolate.dll
 RELEASE_DIR := release/Brainstorm_v3.1
 RELEASE_ZIP := release/Brainstorm_v3.1.zip
 TARGET ?= /mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm
+RUST_TARGET ?= x86_64-pc-windows-gnu
+TARGET_DIR := target
+CPP_DLL := $(TARGET_DIR)/cpp/$(DLL)
+RUST_DLL := $(RUST_DIR)/target/$(RUST_TARGET)/release/immolate.dll
+RUST_ARTIFACT_DIR := $(TARGET_DIR)/rust
+RUST_ARTIFACT := $(RUST_ARTIFACT_DIR)/$(DLL)
+HARNESS_EXE := $(RUST_DIR)/target/$(RUST_TARGET)/release/immolate_dll_harness.exe
+BENCH_CASE ?= all
+BENCH_BUDGET ?= 1000000
+BENCH_THREADS ?= 1
+BENCH_REPEAT ?= 5
+BENCH_MIN_RATIO ?= 0.8
 
 # Update IMMO_SOURCES when adding or removing native files.
 IMMO_SOURCES := brainstorm.cpp functions.cpp rng.cpp seed.cpp util.cpp
@@ -15,51 +28,156 @@ MOD_FILES := Brainstorm.lua UI.lua config.lua lovely.toml nativefs.lua steamodde
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build clean format lint release deploy
+.PHONY: help build build-cpp build-rust build-harness format-rust-check clippy-rust check-rust-dll compare bench bench-rust bench-cpp bench-compare check-rust test-rust clean format lint release deploy
 
 help:
 	@echo "Targets:"
-	@echo "  build    Build $(DLL)"
-	@echo "  format   Format Lua/C++ (if tools installed)"
-	@echo "  lint     Check formatting (if tools installed)"
-	@echo "  release  Build and package release zip"
-	@echo "  deploy   Build and copy mod to TARGET=..."
-	@echo "  clean    Remove build and release artifacts"
+	@echo "  build      Build $(DLL) with the Rust implementation"
+	@echo "  build-cpp  Build C++ oracle DLL to $(CPP_DLL) and $(DLL)"
+	@echo "  build-rust Build Rust DLL to $(DLL)"
+	@echo "  compare    Compare C++ and Rust DLL ABI results under Wine"
+	@echo "  bench      Benchmark the Rust DLL under Wine"
+	@echo "  bench-cpp  Benchmark the C++ DLL under Wine"
+	@echo "  bench-compare Benchmark C++ then Rust DLL under Wine"
+	@echo "  check-rust Run Rust format, clippy, tests, DLL validation, compare, and bench smoke"
+	@echo "  test-rust  Run Rust unit tests"
+	@echo "  format     Format Lua/C++/Rust (if tools installed)"
+	@echo "  lint       Check formatting (if tools installed)"
+	@echo "  release    Build and package release zip"
+	@echo "  deploy     Build and copy mod to TARGET=..."
+	@echo "  clean      Remove build and release artifacts"
 
-build:
+build: build-rust
+
+build-cpp:
 	@echo "Building $(DLL)"
 	@if ! command -v x86_64-w64-mingw32-g++ >/dev/null; then \
 		echo "x86_64-w64-mingw32-g++ not found. Install mingw-w64."; \
 		exit 1; \
 	fi
+	@mkdir -p "$(TARGET_DIR)/cpp"
 	@x86_64-w64-mingw32-g++ \
 		-shared \
 		-O3 \
 		-std=c++17 \
 		-DBUILDING_DLL \
-		-o $(DLL) \
+		-o $(CPP_DLL) \
 		$(IMMO_CPP) \
 		-I $(IMMO_DIR) \
 		-static-libgcc \
 		-static-libstdc++ \
 		-Wl,--export-all-symbols
+	@cp "$(CPP_DLL)" "$(DLL)"
+
+build-rust:
+	@echo "Building Rust $(DLL)"
+	@if ! rustup target list --installed | grep -qx "$(RUST_TARGET)"; then \
+		echo "Rust target $(RUST_TARGET) not installed. Run: rustup target add $(RUST_TARGET)"; \
+		exit 1; \
+	fi
+	@cargo build --manifest-path $(RUST_DIR)/Cargo.toml --release --target $(RUST_TARGET)
+	@mkdir -p "$(RUST_ARTIFACT_DIR)"
+	@cp "$(RUST_DLL)" "$(RUST_ARTIFACT)"
+	@cp "$(RUST_DLL)" "$(DLL)"
+
+build-harness:
+	@echo "Building Rust DLL harness"
+	@if ! rustup target list --installed | grep -qx "$(RUST_TARGET)"; then \
+		echo "Rust target $(RUST_TARGET) not installed. Run: rustup target add $(RUST_TARGET)"; \
+		exit 1; \
+	fi
+	@cargo build --manifest-path $(RUST_DIR)/Cargo.toml --release --target $(RUST_TARGET) --bin immolate_dll_harness
+
+format-rust-check:
+	@cargo fmt --manifest-path $(RUST_DIR)/Cargo.toml --check
+
+clippy-rust:
+	@cargo clippy --manifest-path $(RUST_DIR)/Cargo.toml --all-targets -- -D warnings
+
+check-rust-dll: build-rust
+	@file "$(RUST_ARTIFACT)" | grep -Eq 'PE32\+.*x86-64' || { file "$(RUST_ARTIFACT)"; exit 1; }
+	@for sym in brainstorm_search free_result immolate_set_log_path; do \
+		x86_64-w64-mingw32-objdump -p "$(RUST_ARTIFACT)" | grep -Eq "[[:space:]]$$sym$$" || { \
+			echo "missing Rust DLL export: $$sym"; \
+			exit 1; \
+		}; \
+	done
+	@exports="$$(x86_64-w64-mingw32-objdump -p "$(RUST_ARTIFACT)" | \
+		sed -n '/^\[Ordinal\/Name Pointer\] Table$$/,/^$$/p' | \
+		awk '/\[[[:space:]]*[0-9]+\]/{print $$NF}')"; \
+	expected="$$(printf '%s\n' brainstorm_search free_result immolate_set_log_path | sort)"; \
+	actual="$$(printf '%s\n' "$$exports" | sort)"; \
+	if [ "$$actual" != "$$expected" ]; then \
+		echo "unexpected Rust DLL exports:"; \
+		printf '%s\n' "$$exports"; \
+		exit 1; \
+	fi
+	@for bad in libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do \
+		if x86_64-w64-mingw32-objdump -p "$(RUST_ARTIFACT)" | grep -qi "DLL Name: $$bad"; then \
+			echo "Rust DLL has unshipped runtime import: $$bad"; \
+			exit 1; \
+		fi; \
+	done
+
+compare: build-cpp build-rust build-harness
+	@wine "$(HARNESS_EXE)" compare \
+		--cpp "$$(winepath -w "$$(readlink -f "$(CPP_DLL)")")" \
+		--rust "$$(winepath -w "$$(readlink -f "$(RUST_ARTIFACT)")")" \
+		--threads 1
+
+bench: bench-rust
+
+bench-rust: build-rust build-harness
+	@wine "$(HARNESS_EXE)" bench \
+		--dll "$$(winepath -w "$$(readlink -f "$(RUST_ARTIFACT)")")" \
+		--case "$(BENCH_CASE)" \
+		--budget "$(BENCH_BUDGET)" \
+		--threads "$(BENCH_THREADS)" \
+		--repeat "$(BENCH_REPEAT)"
+
+bench-cpp: build-cpp build-harness
+	@wine "$(HARNESS_EXE)" bench \
+		--dll "$$(winepath -w "$$(readlink -f "$(CPP_DLL)")")" \
+		--case "$(BENCH_CASE)" \
+		--budget "$(BENCH_BUDGET)" \
+		--threads "$(BENCH_THREADS)" \
+		--repeat "$(BENCH_REPEAT)"
+
+bench-compare: build-cpp build-rust build-harness
+	@wine "$(HARNESS_EXE)" bench-compare \
+		--cpp "$$(winepath -w "$$(readlink -f "$(CPP_DLL)")")" \
+		--rust "$$(winepath -w "$$(readlink -f "$(RUST_ARTIFACT)")")" \
+		--case "$(BENCH_CASE)" \
+		--budget "$(BENCH_BUDGET)" \
+		--threads "$(BENCH_THREADS)" \
+		--repeat "$(BENCH_REPEAT)" \
+		--min-ratio "$(BENCH_MIN_RATIO)"
+
+check-rust: format-rust-check clippy-rust test-rust check-rust-dll compare
+	@$(MAKE) bench-compare BENCH_BUDGET=1000 BENCH_REPEAT=1 BENCH_CASE=pack-miss BENCH_MIN_RATIO=0.8
+
+test-rust:
+	@cargo test --manifest-path $(RUST_DIR)/Cargo.toml
 
 clean:
-	@rm -rf $(IMMO_DIR)/build $(DLL) release
+	@rm -rf $(IMMO_DIR)/build $(DLL) release $(TARGET_DIR)/cpp $(RUST_ARTIFACT_DIR)
 
 format:
 	@if command -v stylua >/dev/null; then stylua .; else echo "stylua not found"; fi
 	@if command -v clang-format >/dev/null; then \
 		clang-format -i $(IMMO_CPP) $(IMMO_HPP); \
 	else echo "clang-format not found"; fi
+	@if command -v cargo >/dev/null; then cargo fmt --manifest-path $(RUST_DIR)/Cargo.toml; else echo "cargo not found"; fi
 
 lint:
 	@if command -v stylua >/dev/null; then stylua --check .; else echo "stylua not found"; fi
 	@if command -v clang-format >/dev/null; then \
 		clang-format --dry-run -Werror $(IMMO_CPP) $(IMMO_HPP); \
 	else echo "clang-format not found"; fi
+	@if command -v cargo >/dev/null; then cargo fmt --manifest-path $(RUST_DIR)/Cargo.toml --check; else echo "cargo not found"; fi
+	@if command -v cargo >/dev/null; then cargo clippy --manifest-path $(RUST_DIR)/Cargo.toml --all-targets -- -D warnings; else echo "cargo not found"; fi
 
-release: build
+release: check-rust
 	@rm -rf release
 	@mkdir -p $(RELEASE_DIR)
 	@cp $(MOD_FILES) $(RELEASE_DIR)/
@@ -68,7 +186,7 @@ release: build
 	@date >> $(RELEASE_DIR)/VERSION
 	@if command -v zip >/dev/null; then (cd release && zip -r Brainstorm_v3.1.zip Brainstorm_v3.1 >/dev/null); else echo "zip not found"; fi
 
-deploy: build
+deploy: check-rust
 	@echo "Deploying to $(TARGET)"
 	@mkdir -p "$(TARGET)"
 	@rm -rf "$(TARGET)/Core" "$(TARGET)/UI"

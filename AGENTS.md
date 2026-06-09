@@ -8,14 +8,18 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 
 ## Project Structure & Module Organization
 - Lua entry/UI: `Brainstorm.lua`, `UI.lua`; config/compat in `config.lua`, `lovely.toml`, `nativefs.lua`, `steamodded_compat.lua`.
-- Native sources: `Immolate/*.cpp` and `Immolate/*.hpp` (CPU-only; entry is `Immolate/brainstorm.cpp`).
-- Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use the repo `Makefile`.
+- Native sources: `Rust/` is the primary Rust DLL implementation. `Immolate/*.cpp` and `Immolate/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/brainstorm.cpp`).
+- Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use the repo `Makefile`; C++ and Rust oracle artifacts are kept under `target/cpp/` and `target/rust/`.
 - `BalatroSource/` is the literal game source; never commit it to git and always use it as the source of truth for understanding game behavior.
 - `BalatroSource_Guide.md` summarizes seed/search-relevant mechanics verified from `BalatroSource/`.
 - Logging is currently disabled (commented out) in both Lua and C++; keep it off unless explicitly re-enabled.
 
 ## Build and Development Commands
-- Build: `make build` outputs `Immolate.dll`.
+- Build: `make build` outputs the Rust `Immolate.dll`.
+- C++ oracle: `make build-cpp`.
+- Rust validation: `make check-rust`.
+- C++ vs Rust parity: `make compare`.
+- Benchmarks: `make bench-compare`.
 - Deploy: `make deploy TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm`.
 - Release: `make release` (builds the DLL and zips `release/Brainstorm_v3.1.zip`).
 - Formatting: `make format` (runs stylua/clang-format when available).
@@ -33,6 +37,7 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 
 ## Coding Style & Naming Conventions
 - Lua: Stylua (`stylua.toml`) — 2-space indent, ~80 cols. Avoid globals, return tables explicitly.
+- Rust: rustfmt and clippy; keep unsafe isolated at FFI/harness boundaries.
 - C++: C++17 with RAII; keep stdout minimal. clang-format when available.
 - Naming: Lua locals/functions lower_snake; constants upper snake (`Brainstorm.VERSION`); C++ types PascalCase, file-scope statics as needed.
 
