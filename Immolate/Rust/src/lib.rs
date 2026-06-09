@@ -9,6 +9,7 @@ pub mod rng;
 pub mod search;
 pub mod seed;
 pub mod v2;
+pub mod v3;
 
 pub use filters::{FilterConfig, JokerLocation};
 pub use search::{brainstorm_search_core, resolve_seed_budget, resolve_threads};
@@ -28,6 +29,7 @@ mod tests {
     use crate::rng::{LuaRandom, fract, pseudohash, pseudohash_from, pseudostep, round13};
     use crate::seed::Seed;
     use crate::v2::brainstorm_search_core_v2;
+    use crate::v3::brainstorm_search_core_v3;
 
     #[test]
     fn seed_order_starts_like_cpp() {
@@ -529,25 +531,6 @@ mod tests {
                 ),
             ),
             (
-                "ante-1 locked tag",
-                FilterConfig::from_raw(
-                    "",
-                    "",
-                    "tag_buffoon",
-                    "",
-                    "",
-                    "any",
-                    0.0,
-                    false,
-                    false,
-                    "b_red",
-                    false,
-                    false,
-                    0,
-                    0.0,
-                ),
-            ),
-            (
                 "too many souls in selected pack",
                 FilterConfig::from_raw(
                     "",
@@ -641,6 +624,72 @@ mod tests {
                 brainstorm_search_core_v2("", &cfg, 10_000, 1),
                 brainstorm_search_core("", &cfg, 10_000, 1),
                 "V2 mismatch for {name}",
+            );
+        }
+    }
+
+    #[test]
+    fn v3_rejects_static_no_match_filters() {
+        use crate::v3::config::{CompiledFilter, KernelShape};
+
+        let cases = [
+            (
+                "ante-1 locked tag",
+                FilterConfig::from_raw(
+                    "",
+                    "",
+                    "tag_buffoon",
+                    "",
+                    "",
+                    "any",
+                    0.0,
+                    false,
+                    false,
+                    "b_red",
+                    false,
+                    false,
+                    0,
+                    0.0,
+                ),
+            ),
+            (
+                "legendary shop joker",
+                FilterConfig::from_raw(
+                    "", "", "", "", "Perkeo", "shop", 0.0, false, false, "b_red", false, false, 0,
+                    0.0,
+                ),
+            ),
+            (
+                "too many souls in selected pack",
+                FilterConfig::from_raw(
+                    "",
+                    "p_spectral_normal_1",
+                    "",
+                    "",
+                    "",
+                    "any",
+                    3.0,
+                    false,
+                    false,
+                    "b_red",
+                    false,
+                    false,
+                    0,
+                    0.0,
+                ),
+            ),
+        ];
+
+        for (name, cfg) in cases {
+            assert_eq!(
+                CompiledFilter::compile(&cfg).shape,
+                KernelShape::NoMatch,
+                "{name} should be rejected before seed scanning",
+            );
+            assert_eq!(
+                brainstorm_search_core_v3("", &cfg, 10_000, 1),
+                brainstorm_search_core_v2("", &cfg, 10_000, 1),
+                "V3 mismatch for {name}",
             );
         }
     }

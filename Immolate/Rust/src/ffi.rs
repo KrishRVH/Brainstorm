@@ -7,8 +7,10 @@ use std::ptr;
 use crate::filters::FilterConfig;
 #[cfg(feature = "v1-legacy")]
 use crate::search::brainstorm_search_core;
-#[cfg(not(feature = "v1-legacy"))]
+#[cfg(all(not(feature = "v1-legacy"), feature = "v2-baseline"))]
 use crate::v2::brainstorm_search_core_v2 as brainstorm_search_core;
+#[cfg(all(not(feature = "v1-legacy"), not(feature = "v2-baseline")))]
+use crate::v3::brainstorm_search_core_v3 as brainstorm_search_core;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn brainstorm_search(

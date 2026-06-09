@@ -6,6 +6,7 @@ use immolate::filters::FilterConfig;
 use immolate::search::brainstorm_search_core;
 use immolate::seed::Seed;
 use immolate::v2::brainstorm_search_core_v2;
+use immolate::v3::brainstorm_search_core_v3;
 
 #[path = "../bench_cases.rs"]
 mod bench_cases;
@@ -26,7 +27,7 @@ impl Default for Args {
             budget: 1_000_000,
             threads: 1,
             repeat: 3,
-            engine: Engine::V2,
+            engine: Engine::V3,
         }
     }
 }
@@ -35,6 +36,7 @@ impl Default for Args {
 enum Engine {
     Base,
     V2,
+    V3,
     Both,
 }
 
@@ -42,7 +44,7 @@ fn main() {
     let args = parse_args().unwrap_or_else(|message| {
         eprintln!("{message}");
         eprintln!(
-            "usage: brainstorm_bench [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--engine v2|base|both]"
+            "usage: brainstorm_bench [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--engine v3|v2|base|both]"
         );
         process::exit(2);
     });
@@ -64,6 +66,9 @@ fn main() {
                     },
                     Engine::V2 => {
                         brainstorm_search_core_v2(case.seed_start, &cfg, args.budget, args.threads)
+                    },
+                    Engine::V3 => {
+                        brainstorm_search_core_v3(case.seed_start, &cfg, args.budget, args.threads)
                     },
                     Engine::Both => unreachable!("expanded by selected_engines"),
                 };
@@ -106,6 +111,7 @@ impl Engine {
         match self {
             Self::Base => "base",
             Self::V2 => "v2",
+            Self::V3 => "v3",
             Self::Both => "both",
         }
     }
@@ -115,7 +121,8 @@ fn selected_engines(engine: Engine) -> &'static [Engine] {
     match engine {
         Engine::Base => &[Engine::Base],
         Engine::V2 => &[Engine::V2],
-        Engine::Both => &[Engine::Base, Engine::V2],
+        Engine::V3 => &[Engine::V3],
+        Engine::Both => &[Engine::Base, Engine::V2, Engine::V3],
     }
 }
 
@@ -182,6 +189,7 @@ fn parse_args() -> Result<Args, String> {
                 args.engine = match value.as_str() {
                     "base" => Engine::Base,
                     "v2" => Engine::V2,
+                    "v3" => Engine::V3,
                     "both" => Engine::Both,
                     _ => return Err(format!("invalid --engine: {value}")),
                 };

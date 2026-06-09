@@ -1,7 +1,8 @@
 use crate::filters::{FilterConfig, JokerLocation};
 use crate::item::Item;
-use crate::v2::tables::{
-    POOL_COMMON, POOL_RARE, POOL_UNCOMMON, is_soulable_pack, pack_info, target_joker_pools,
+use crate::v3::tables::{
+    POOL_COMMON, POOL_RARE, POOL_UNCOMMON, is_ante1_locked_tag, is_soulable_pack, pack_info,
+    target_joker_pools,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -183,6 +184,10 @@ fn is_static_no_match(
         && (wants_joker_shop || wants_joker_pack)
         && target_joker_pools & (POOL_COMMON | POOL_UNCOMMON | POOL_RARE) == 0
     {
+        return true;
+    }
+
+    if is_ante1_locked_tag(raw.tag1) || is_ante1_locked_tag(raw.tag2) {
         return true;
     }
 

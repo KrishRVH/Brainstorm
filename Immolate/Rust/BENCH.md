@@ -39,17 +39,38 @@ make bench-compare \
   BENCH_COLOR=always
 ```
 
-Prettiest, most complete legacy V1 vs V2 comparison:
+Prettiest, most complete V2 baseline vs V3 candidate comparison:
 
 ```bash
-make build-rust-v1 build-rust-v2
+make build-rust-v2 build-rust-v3
+make compare \
+  RUST_BASE_DLL=target/rust-v2/Immolate.dll \
+  RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll
+
+make bench-compare \
+  RUST_BASE_DLL=target/rust-v2/Immolate.dll \
+  RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll \
+  BENCH_CASE=all \
+  BENCH_BUDGET=1000000 \
+  BENCH_REPEAT=7 \
+  BENCH_WARMUP=2 \
+  BENCH_THREADS=1 \
+  BENCH_FORMAT=pretty \
+  BENCH_COLOR=always \
+  BENCH_CANDIDATE_MIN_RATIO=10
+```
+
+Prettiest, most complete legacy V1 vs V3 comparison:
+
+```bash
+make build-rust-v1 build-rust-v3
 make compare \
   RUST_BASE_DLL=target/rust-v1/Immolate.dll \
-  RUST_CANDIDATE_DLL=target/rust-v2/Immolate.dll
+  RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll
 
 make bench-compare \
   RUST_BASE_DLL=target/rust-v1/Immolate.dll \
-  RUST_CANDIDATE_DLL=target/rust-v2/Immolate.dll \
+  RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll \
   BENCH_CASE=all \
   BENCH_BUDGET=1000000 \
   BENCH_REPEAT=7 \
@@ -78,7 +99,7 @@ make bench-compare BENCH_BUDGET=100000 BENCH_REPEAT=3 BENCH_CASE=all
 Run C++ vs Rust-base vs a future Rust-candidate DLL:
 
 ```bash
-make bench-compare RUST_CANDIDATE_DLL=target/rust-v2/Immolate.dll \
+make bench-compare RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll \
   BENCH_BUDGET=100000 BENCH_REPEAT=3 BENCH_CASE=all
 ```
 
@@ -136,6 +157,32 @@ set, the candidate is measured as a third competitor but does not replace the
 `rust-base` gate.
 
 ## Latest Validated Local Run
+
+The latest local V2 baseline vs V3 candidate proof on June 9, 2026 used:
+
+```bash
+make build-rust-v2 build-rust-v3
+make compare \
+  RUST_BASE_DLL=/tmp/brainstorm-v3-proof/rust-v2-baseline.dll \
+  RUST_CANDIDATE_DLL=/tmp/brainstorm-v3-proof/rust-v3-candidate.dll
+
+make bench-compare \
+  RUST_BASE_DLL=/tmp/brainstorm-v3-proof/rust-v2-baseline.dll \
+  RUST_CANDIDATE_DLL=/tmp/brainstorm-v3-proof/rust-v3-candidate.dll \
+  BENCH_CASE=all BENCH_BUDGET=1000000 BENCH_REPEAT=7 BENCH_WARMUP=2 \
+  BENCH_THREADS=1 BENCH_FORMAT=tsv BENCH_COLOR=never BENCH_MIN_RATIO=0.1 \
+  BENCH_CANDIDATE_MIN_RATIO=10 BENCH_CANDIDATE_MIN_SCAN_PCT=0.95
+```
+
+The candidate aggregate passed:
+
+| comparison | ratio | target | cases |
+| --- | ---: | ---: | ---: |
+| V3/V2 non-hit full-budget geometric mean | 58.418x | 10.000x | 3 |
+
+The benchmark summary results also matched across C++, V2, and V3 for the same
+run. This proves the harness-defined aggregate target; it does not mean every
+individual hit or mixed case is 10x faster.
 
 The latest local A/A sanity run on June 9, 2026 used:
 
@@ -290,25 +337,28 @@ release gate.
 
 ## Rust Candidate Workflow
 
-V2 is the default Rust DLL built by `make build-rust`. The legacy V1 DLL remains
-available for comparison with `make build-rust-v1`, which writes
+V3 is the default Rust DLL built by `make build-rust`. The preserved V2 baseline
+DLL is built by `make build-rust-v2`, which writes
+`target/rust-v2/Immolate.dll`. The legacy V1 DLL remains available for
+comparison with `make build-rust-v1`, which writes
 `target/rust-v1/Immolate.dll`.
 
-`rust-base` is normally the current checked-in Rust DLL built by
-`make build-rust`. Set `RUST_BASE_DLL` when comparing against a specific
-baseline such as legacy V1. `rust-candidate` is optional and can point at the
-in-repo V2 comparison artifact built by `make build-rust-v2` at
-`target/rust-v2/Immolate.dll`, or at a separate DLL from another optimization
-branch, alternate build profile, or experimental worktree.
+Set `RUST_BASE_DLL=target/rust-v2/Immolate.dll` when proving V3 against the
+previous fastest Rust implementation. Set
+`RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll` for the in-repo V3 candidate,
+or point it at a separate DLL from another optimization branch, alternate build
+profile, or experimental worktree.
 
 Before trusting candidate performance, validate candidate functionality too:
 
 ```bash
-make build-rust-v2
-make compare RUST_CANDIDATE_DLL=target/rust-v2/Immolate.dll
+make build-rust-v2 build-rust-v3
+make compare \
+  RUST_BASE_DLL=target/rust-v2/Immolate.dll \
+  RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll
 ```
 
-That compares C++, `rust-base`, and `rust-candidate` across the functional
+That compares C++, V2 as `rust-base`, and V3 as `rust-candidate` across the functional
 fixture suite, parser matrix, threaded search fixture, wraparound fixture, and
 alloc/free stress check. Only benchmark a candidate after this passes.
 
@@ -320,11 +370,11 @@ run, keep investigating before claiming an improvement.
 To prove a 10x candidate/base improvement on non-hit full-budget fixtures:
 
 ```bash
-make build-rust-v1 build-rust-v2
+make build-rust-v2 build-rust-v3
 
 make bench-compare \
-  RUST_BASE_DLL=target/rust-v1/Immolate.dll \
-  RUST_CANDIDATE_DLL=target/rust-v2/Immolate.dll \
+  RUST_BASE_DLL=target/rust-v2/Immolate.dll \
+  RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll \
   BENCH_CASE=all \
   BENCH_BUDGET=1000000 \
   BENCH_REPEAT=7 \
@@ -340,9 +390,10 @@ make bench-compare \
 ## Optional Native Rust-Only Benchmark
 
 For quick Linux-side profiling of the Rust core without the Windows DLL ABI,
-use the native helper. It defaults to V2, matching the current exported Rust
-DLL path. Pass `--engine base` for the legacy V1 source core or `--engine both`
-for an in-process source-level comparison.
+use the native helper. It defaults to V3, matching the current exported Rust
+DLL path. Pass `--engine v2` for the preserved V2 source core, `--engine base`
+for the legacy V1 source core, or `--engine both` for an in-process source-level
+comparison.
 
 ```bash
 cargo run --manifest-path Immolate/Rust/Cargo.toml --release --bin brainstorm_bench -- \
@@ -366,7 +417,7 @@ Before changing hot-path code:
    "Group Speedups", and any "High Variance" warnings.
 5. Make the smallest performance-oriented change that preserves parity.
 6. Build the experiment as a candidate DLL and run
-   `make compare RUST_CANDIDATE_DLL=target/rust-v2/Immolate.dll`.
+   `make compare RUST_BASE_DLL=target/rust-v2/Immolate.dll RUST_CANDIDATE_DLL=target/rust-v3/Immolate.dll`.
 7. Rerun the exact same `bench-compare` command with `RUST_CANDIDATE_DLL=...`.
 8. Keep the change only if the relevant fixture improves beyond the A/A noise or
    the tradeoff is explicitly justified.

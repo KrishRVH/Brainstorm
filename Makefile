@@ -12,15 +12,19 @@ CPP_DLL := $(TARGET_DIR)/cpp/$(DLL)
 RUST_CARGO_TARGET_DIR := $(RUST_DIR)/target
 RUST_V1_CARGO_TARGET_DIR := $(TARGET_DIR)/cargo-rust-v1
 RUST_V2_CARGO_TARGET_DIR := $(TARGET_DIR)/cargo-rust-v2
+RUST_V3_CARGO_TARGET_DIR := $(TARGET_DIR)/cargo-rust-v3
 RUST_DLL := $(RUST_CARGO_TARGET_DIR)/$(RUST_TARGET)/release/immolate.dll
 RUST_V1_DLL := $(RUST_V1_CARGO_TARGET_DIR)/$(RUST_TARGET)/release/immolate.dll
 RUST_V2_DLL := $(RUST_V2_CARGO_TARGET_DIR)/$(RUST_TARGET)/release/immolate.dll
+RUST_V3_DLL := $(RUST_V3_CARGO_TARGET_DIR)/$(RUST_TARGET)/release/immolate.dll
 RUST_ARTIFACT_DIR := $(TARGET_DIR)/rust
 RUST_ARTIFACT := $(RUST_ARTIFACT_DIR)/$(DLL)
 RUST_V1_ARTIFACT_DIR := $(TARGET_DIR)/rust-v1
 RUST_V1_ARTIFACT := $(RUST_V1_ARTIFACT_DIR)/$(DLL)
 RUST_V2_ARTIFACT_DIR := $(TARGET_DIR)/rust-v2
 RUST_V2_ARTIFACT := $(RUST_V2_ARTIFACT_DIR)/$(DLL)
+RUST_V3_ARTIFACT_DIR := $(TARGET_DIR)/rust-v3
+RUST_V3_ARTIFACT := $(RUST_V3_ARTIFACT_DIR)/$(DLL)
 RUST_BASE_DLL ?=
 RUST_CANDIDATE_DLL ?=
 HARNESS_EXE := $(RUST_DIR)/target/$(RUST_TARGET)/release/immolate_dll_harness.exe
@@ -58,7 +62,7 @@ MOD_FILES := Brainstorm.lua UI.lua config.lua lovely.toml nativefs.lua steamodde
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build build-cpp build-rust build-rust-v1 build-rust-v2 build-harness format-rust-check clippy-rust check-rust-dll compare bench bench-rust bench-cpp bench-compare check-rust test-rust clean format lint release deploy
+.PHONY: help build build-cpp build-rust build-rust-v1 build-rust-v2 build-rust-v3 build-harness format-rust-check clippy-rust check-rust-dll compare bench bench-rust bench-cpp bench-compare check-rust test-rust clean format lint release deploy
 
 help:
 	@echo "Targets:"
@@ -66,7 +70,8 @@ help:
 	@echo "  build-cpp  Build C++ oracle DLL to $(CPP_DLL) and $(DLL)"
 	@echo "  build-rust Build Rust DLL to $(DLL)"
 	@echo "  build-rust-v1 Build legacy Rust V1 DLL to $(RUST_V1_ARTIFACT)"
-	@echo "  build-rust-v2 Build Rust V2 DLL comparison artifact to $(RUST_V2_ARTIFACT)"
+	@echo "  build-rust-v2 Build Rust V2 baseline DLL comparison artifact to $(RUST_V2_ARTIFACT)"
+	@echo "  build-rust-v3 Build Rust V3 candidate DLL comparison artifact to $(RUST_V3_ARTIFACT)"
 	@echo "  compare    Compare C++ and Rust DLL ABI results under Wine"
 	@echo "  bench      Benchmark the Rust DLL under Wine"
 	@echo "  bench-cpp  Benchmark the C++ DLL under Wine"
@@ -124,14 +129,24 @@ build-rust-v1:
 	@cp "$(RUST_V1_DLL)" "$(RUST_V1_ARTIFACT)"
 
 build-rust-v2:
-	@echo "Building Rust V2 comparison $(DLL)"
+	@echo "Building Rust V2 baseline $(DLL)"
 	@if ! rustup target list --installed | grep -qx "$(RUST_TARGET)"; then \
 		echo "Rust target $(RUST_TARGET) not installed. Run: rustup target add $(RUST_TARGET)"; \
 		exit 1; \
 	fi
-	@CARGO_TARGET_DIR="$(RUST_V2_CARGO_TARGET_DIR)" cargo build --manifest-path $(RUST_DIR)/Cargo.toml --release --target $(RUST_TARGET)
+	@CARGO_TARGET_DIR="$(RUST_V2_CARGO_TARGET_DIR)" cargo build --manifest-path $(RUST_DIR)/Cargo.toml --release --target $(RUST_TARGET) --features v2-baseline
 	@mkdir -p "$(RUST_V2_ARTIFACT_DIR)"
 	@cp "$(RUST_V2_DLL)" "$(RUST_V2_ARTIFACT)"
+
+build-rust-v3:
+	@echo "Building Rust V3 candidate $(DLL)"
+	@if ! rustup target list --installed | grep -qx "$(RUST_TARGET)"; then \
+		echo "Rust target $(RUST_TARGET) not installed. Run: rustup target add $(RUST_TARGET)"; \
+		exit 1; \
+	fi
+	@CARGO_TARGET_DIR="$(RUST_V3_CARGO_TARGET_DIR)" cargo build --manifest-path $(RUST_DIR)/Cargo.toml --release --target $(RUST_TARGET)
+	@mkdir -p "$(RUST_V3_ARTIFACT_DIR)"
+	@cp "$(RUST_V3_DLL)" "$(RUST_V3_ARTIFACT)"
 
 build-harness:
 	@echo "Building Rust DLL harness"
@@ -238,7 +253,7 @@ test-rust:
 	@cargo test --manifest-path $(RUST_DIR)/Cargo.toml
 
 clean:
-	@rm -rf $(IMMO_DIR)/build $(DLL) release $(TARGET_DIR)/cpp $(RUST_ARTIFACT_DIR) $(RUST_V1_ARTIFACT_DIR) $(RUST_V2_ARTIFACT_DIR) $(RUST_V1_CARGO_TARGET_DIR) $(RUST_V2_CARGO_TARGET_DIR)
+	@rm -rf $(IMMO_DIR)/build $(DLL) release $(TARGET_DIR)/cpp $(RUST_ARTIFACT_DIR) $(RUST_V1_ARTIFACT_DIR) $(RUST_V2_ARTIFACT_DIR) $(RUST_V3_ARTIFACT_DIR) $(RUST_V1_CARGO_TARGET_DIR) $(RUST_V2_CARGO_TARGET_DIR) $(RUST_V3_CARGO_TARGET_DIR)
 
 format:
 	@if command -v stylua >/dev/null; then stylua .; else echo "stylua not found"; fi
