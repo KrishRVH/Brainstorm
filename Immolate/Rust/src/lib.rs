@@ -22,8 +22,8 @@ mod tests {
 
     use crate::ffi::{brainstorm_search, free_result};
     use crate::item::{
-        COMMON_JOKERS, COMMON_JOKERS_100, Item, RARE_JOKERS, RARE_JOKERS_100, UNCOMMON_JOKERS,
-        UNCOMMON_JOKERS_100,
+        COMMON_JOKERS, COMMON_JOKERS_100, Item, LEGENDARY_JOKERS, RARE_JOKERS, RARE_JOKERS_100,
+        UNCOMMON_JOKERS, UNCOMMON_JOKERS_100,
     };
     use crate::rng::{LuaRandom, fract, pseudohash, pseudohash_from, pseudostep, round13};
     use crate::seed::Seed;
@@ -529,6 +529,25 @@ mod tests {
                 ),
             ),
             (
+                "ante-1 locked tag",
+                FilterConfig::from_raw(
+                    "",
+                    "",
+                    "tag_buffoon",
+                    "",
+                    "",
+                    "any",
+                    0.0,
+                    false,
+                    false,
+                    "b_red",
+                    false,
+                    false,
+                    0,
+                    0.0,
+                ),
+            ),
+            (
                 "too many souls in selected pack",
                 FilterConfig::from_raw(
                     "",
@@ -662,6 +681,28 @@ mod tests {
         assert_eq!(RARE_JOKERS[19], Item::Burnt_Joker);
         assert!(!RARE_JOKERS.contains(&Item::Sixth_Sense));
         assert!(!RARE_JOKERS.contains(&Item::Seance));
+    }
+
+    #[test]
+    fn joker_rarity_pools_are_disjoint() {
+        let pools: &[(&str, &[Item])] = &[
+            ("common", &COMMON_JOKERS),
+            ("uncommon", &UNCOMMON_JOKERS),
+            ("rare", &RARE_JOKERS),
+            ("legendary", &LEGENDARY_JOKERS),
+        ];
+        for i in 0..pools.len() {
+            for j in (i + 1)..pools.len() {
+                let (left_name, left) = pools[i];
+                let (right_name, right) = pools[j];
+                for item in left {
+                    assert!(
+                        !right.contains(item),
+                        "{item:?} appears in both {left_name} and {right_name} joker pools",
+                    );
+                }
+            }
+        }
     }
 
     #[test]

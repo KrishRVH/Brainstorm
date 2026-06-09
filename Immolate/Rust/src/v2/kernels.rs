@@ -393,7 +393,7 @@ fn next_joker_item_with_locks(
         }
     };
 
-    if target_pools != 0 && rarity_pool & target_pools == 0 && source == JokerSource::Shop {
+    if target_pools != 0 && rarity_pool & target_pools == 0 {
         return Item::RETRY;
     }
 
