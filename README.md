@@ -1,7 +1,9 @@
 # Brainstorm with Joker search, Erratic deck search, Save states etc.
 <img width="1536" height="864" alt="Brainstorm 3" src="https://github.com/user-attachments/assets/68a97977-3c80-4259-9378-58540a7b749e" />
 
-Brainstorm is a Balatro mod that rapidly searches for seeds matching voucher/pack/tag filters and integrates directly into the game loop via Lua + a native DLL.
+Brainstorm is a Balatro mod that rapidly searches for seeds matching
+voucher/pack/tag/Joker/Erratic Deck filters and integrates directly into the
+game loop through Lua plus a native Rust DLL.
 
 ## Setup (Required First)
 1. Install `smods-1.0.0-beta` (Steamodded) for Balatro.
@@ -27,6 +29,7 @@ This project is licensed under CC BY-NC-SA 4.0.
 ## Features
 - Auto-reroll with dual-tag support (order-agnostic or same-tag-twice).
 - First-shop filters: voucher, two pack slots (e.g., Mega Spectral), specific Joker in shop slots or Buffoon packs, observatory (Telescope + Mega Celestial), Perkeo (The Soul rolls Perkeo).
+- Erratic Deck filters for face-card count, no-face searches, and suit-ratio searches.
 - Joker list is alphabetized with a name filter for quick searching; Reset All clears filters and preferences back to defaults.
 - Save/load state (Z/X + 1-5), reroll hotkeys (Ctrl+R, Ctrl+A), settings UI (Ctrl+T).
 
@@ -42,7 +45,43 @@ rustup target add x86_64-pc-windows-gnu
 - Write access to `%AppData%\Roaming\Balatro\Mods`.
 
 ## Build & Deploy (from source)
-`make build` builds the Rust native DLL. `make build-cpp` still builds the legacy C++ oracle for parity checks. `make check-rust` runs Rust formatting, clippy, unit tests, DLL export/import validation, C++ vs Rust parity, and a benchmark regression smoke.
+`make build` builds the current Rust native DLL and writes `Immolate.dll`.
+There is one Rust implementation now. `make build-cpp` still builds the C++
+oracle for parity checks, but the game uses the Rust DLL.
+
+`make check-rust` runs Rust formatting, clippy, unit tests, DLL export/import
+validation, C++ vs Rust parity, and a benchmark regression smoke.
+
+Strict full-suite benchmark gate:
+
+```bash
+make bench-compare \
+  BENCH_CASE=all \
+  BENCH_BUDGET=100000 \
+  BENCH_REPEAT=5 \
+  BENCH_WARMUP=2 \
+  BENCH_THREADS=1 \
+  BENCH_FORMAT=tsv \
+  BENCH_COLOR=never \
+  BENCH_MIN_RATIO=1.0
+```
+
+Actual Lua UI UX benchmark gate:
+
+```bash
+make bench-compare \
+  BENCH_CASE=ux \
+  BENCH_BUDGET=100000 \
+  BENCH_REPEAT=5 \
+  BENCH_WARMUP=2 \
+  BENCH_THREADS=0 \
+  BENCH_FORMAT=tsv \
+  BENCH_COLOR=never \
+  BENCH_MIN_RATIO=1.0
+```
+
+See `Immolate/Rust/BENCH.md` for benchmark workflows, including future
+candidate DLL comparison through `RUST_CANDIDATE_DLL`.
 
 **Release packaging:** `make release` (runs `make check-rust`, then creates `release/Brainstorm_v3.1.zip`).
 
@@ -67,6 +106,7 @@ You can copy these from a release zip (e.g. `release/Brainstorm_v3.1.zip`) or fr
 - Open settings: Ctrl+T. Toggle auto-reroll: Ctrl+A. Manual reroll: Ctrl+R.
 - Save/load state: Z/X + 1-5.
 - Configure filters: dual tags, voucher, pack (two shop slots), Joker (searchable list + location), souls, observatory, Perkeo.
+- Configure Erratic Deck filters when searching for opening hands by face-card count, no faces, or suit concentration.
 - Use "Reset All" in the Brainstorm tab to restore filter and Erratic deck settings to defaults.
 
 ## Troubleshooting

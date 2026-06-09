@@ -1,6 +1,6 @@
+use immolate::brainstorm_search_core;
 use immolate::filters::FilterConfig;
 use immolate::rng::{LuaRandom, pseudohash};
-use immolate::search::brainstorm_search_core;
 use immolate::seed::Seed;
 
 struct SearchCase {

@@ -26,6 +26,7 @@ pub fn apply_compiled_filter(state: &mut V3State, cfg: &CompiledFilter) -> bool 
         KernelShape::Souls => souls(state, cfg),
         KernelShape::Perkeo => perkeo(state, cfg),
         KernelShape::Erratic => erratic(state, cfg),
+        KernelShape::Composite => composite(state, cfg),
         KernelShape::Generic => generic_fallback(state, cfg),
     }
 }
@@ -215,6 +216,100 @@ fn erratic(state: &mut V3State, cfg: &CompiledFilter) -> bool {
         return f64::from(first + second) / f64::from(total) >= cfg.raw.suit_ratio;
     }
     true
+}
+
+fn composite(state: &mut V3State, cfg: &CompiledFilter) -> bool {
+    if (cfg.raw.tag1 != Item::RETRY || cfg.raw.tag2 != Item::RETRY) && !tag_only(state, cfg) {
+        return false;
+    }
+
+    let mut first_voucher = Item::RETRY;
+    if cfg.raw.voucher != Item::RETRY || cfg.raw.observatory {
+        first_voucher = next_voucher(state, cfg.raw.deck);
+        if cfg.raw.voucher != Item::RETRY && first_voucher != cfg.raw.voucher {
+            return false;
+        }
+    }
+
+    let packs = pack_slots(state, cfg.needs_packs);
+    if cfg.raw.pack != Item::RETRY && !packs.contains(&cfg.raw.pack) {
+        return false;
+    }
+
+    if cfg.raw.observatory {
+        if first_voucher != Item::Telescope {
+            return false;
+        }
+        if !packs.contains(&Item::Mega_Celestial_Pack) {
+            return false;
+        }
+    }
+
+    if cfg.raw.joker != Item::RETRY && !composite_has_joker(state, cfg, packs) {
+        return false;
+    }
+
+    if (cfg.raw.souls > 0 || cfg.raw.perkeo) && !composite_has_souls_and_perkeo(state, cfg, packs) {
+        return false;
+    }
+
+    erratic(state, cfg)
+}
+
+fn composite_has_joker(state: &mut V3State, cfg: &CompiledFilter, packs: [Item; 2]) -> bool {
+    if cfg.wants_joker_shop
+        && shop_has_joker(state, cfg.raw.joker, cfg.target_joker_pools, cfg.raw.deck)
+    {
+        return true;
+    }
+    if !cfg.wants_joker_pack {
+        return false;
+    }
+
+    packs.into_iter().any(|pack| {
+        pack != Item::RETRY
+            && (cfg.raw.pack == Item::RETRY || pack == cfg.raw.pack)
+            && is_buffoon_pack(pack)
+            && buffoon_pack_has_joker(state, pack, cfg.raw.joker, cfg.raw.deck)
+    })
+}
+
+fn composite_has_souls_and_perkeo(
+    state: &mut V3State,
+    cfg: &CompiledFilter,
+    packs: [Item; 2],
+) -> bool {
+    let mut souls_found = 0_i64;
+    let mut perkeo_found = !cfg.raw.perkeo;
+    for pack in packs {
+        if pack == Item::RETRY || (cfg.raw.pack != Item::RETRY && pack != cfg.raw.pack) {
+            continue;
+        }
+        if !is_soulable_pack(pack) {
+            continue;
+        }
+
+        let souls_in_pack = count_souls_in_pack(state, pack, cfg.raw.deck);
+        if souls_in_pack == 0 {
+            continue;
+        }
+        souls_found += i64::from(souls_in_pack);
+
+        if cfg.raw.perkeo {
+            let uses = usize::from(souls_in_pack).min(pack_info(pack).choices);
+            for _ in 0..uses {
+                if soul_yields_perkeo(state, cfg.raw.deck) {
+                    perkeo_found = true;
+                    break;
+                }
+            }
+            if perkeo_found {
+                break;
+            }
+        }
+    }
+
+    (cfg.raw.souls <= 0 || souls_found >= cfg.raw.souls) && perkeo_found
 }
 
 fn pack_slots(state: &mut V3State, needed: bool) -> [Item; 2] {

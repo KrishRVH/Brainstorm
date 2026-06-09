@@ -8,11 +8,11 @@ pub mod item;
 pub mod rng;
 pub mod search;
 pub mod seed;
-pub mod v2;
 pub mod v3;
 
 pub use filters::{FilterConfig, JokerLocation};
-pub use search::{brainstorm_search_core, resolve_seed_budget, resolve_threads};
+pub use search::{resolve_seed_budget, resolve_threads};
+pub use v3::brainstorm_search_core_v3 as brainstorm_search_core;
 
 #[cfg(test)]
 mod tests {
@@ -28,8 +28,6 @@ mod tests {
     };
     use crate::rng::{LuaRandom, fract, pseudohash, pseudohash_from, pseudostep, round13};
     use crate::seed::Seed;
-    use crate::v2::brainstorm_search_core_v2;
-    use crate::v3::brainstorm_search_core_v3;
 
     #[test]
     fn seed_order_starts_like_cpp() {
@@ -265,153 +263,8 @@ mod tests {
     }
 
     #[test]
-    fn v2_matches_current_core_for_search_vectors() {
-        let cases = [
-            ("", FilterConfig::default(), 1, Some("")),
-            ("1", FilterConfig::default(), 1, Some("1")),
-            (
-                "",
-                FilterConfig::from_raw(
-                    "",
-                    "",
-                    "tag_charm",
-                    "",
-                    "",
-                    "any",
-                    0.0,
-                    false,
-                    false,
-                    "b_red",
-                    false,
-                    false,
-                    0,
-                    0.0,
-                ),
-                10_000,
-                Some("21111111"),
-            ),
-            (
-                "",
-                FilterConfig::from_raw(
-                    "v_telescope",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "any",
-                    0.0,
-                    false,
-                    false,
-                    "b_red",
-                    false,
-                    false,
-                    0,
-                    0.0,
-                ),
-                10_000,
-                Some("P1111111"),
-            ),
-            (
-                "",
-                FilterConfig::from_raw(
-                    "",
-                    "p_spectral_mega_1",
-                    "",
-                    "",
-                    "",
-                    "any",
-                    0.0,
-                    false,
-                    false,
-                    "b_red",
-                    false,
-                    false,
-                    0,
-                    0.0,
-                ),
-                10_000,
-                Some("Z2111111"),
-            ),
-            (
-                "",
-                FilterConfig::from_raw(
-                    "", "", "", "", "", "any", 0.0, true, false, "b_red", false, false, 0, 0.0,
-                ),
-                100_000,
-                Some("S111111"),
-            ),
-            (
-                "",
-                FilterConfig::from_raw(
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "any",
-                    0.0,
-                    false,
-                    false,
-                    "b_erratic",
-                    true,
-                    false,
-                    12,
-                    0.0,
-                ),
-                10_000,
-                Some("11"),
-            ),
-        ];
-
-        for (seed_start, cfg, budget, expected) in cases {
-            assert_eq!(
-                brainstorm_search_core_v2(seed_start, &cfg, budget, 1).as_deref(),
-                expected
-            );
-            assert_eq!(
-                brainstorm_search_core_v2(seed_start, &cfg, budget, 1),
-                brainstorm_search_core(seed_start, &cfg, budget, 1)
-            );
-        }
-    }
-
-    #[test]
-    fn v2_matches_current_core_for_benchmark_cases() {
-        for case in crate::bench_cases::bench_cases() {
-            let cfg = FilterConfig::from_raw(
-                case.voucher,
-                case.pack,
-                case.tag1,
-                case.tag2,
-                case.joker,
-                case.joker_location,
-                case.souls,
-                case.observatory,
-                case.perkeo,
-                case.deck,
-                case.erratic,
-                case.no_faces,
-                case.min_face_cards,
-                case.suit_ratio,
-            );
-            let budget = match case.name {
-                "observatory" => 100_000,
-                "shop-hit" | "any-joker" | "souls-arcana" => 50_000,
-                "perkeo" => 20_000,
-                _ => 10_000,
-            };
-            assert_eq!(
-                brainstorm_search_core_v2(case.seed_start, &cfg, budget, 1),
-                brainstorm_search_core(case.seed_start, &cfg, budget, 1),
-                "V2 mismatch for benchmark case {}",
-                case.name,
-            );
-        }
-    }
-
-    #[test]
-    fn v2_falls_back_for_unsupported_filter_combinations() {
-        use crate::v2::config::{CompiledFilter, KernelShape};
+    fn current_core_handles_composite_benchmark_cases() {
+        use crate::v3::config::{CompiledFilter, KernelShape};
 
         let cases = [
             (
@@ -493,22 +346,80 @@ mod tests {
         for (name, cfg, budget) in cases {
             assert_eq!(
                 CompiledFilter::compile(&cfg).shape,
-                KernelShape::Generic,
-                "{name} should use generic fallback",
+                KernelShape::Composite,
+                "{name} should use composite V3 kernel",
+            );
+            let _ = brainstorm_search_core("", &cfg, budget, 1);
+        }
+    }
+
+    #[test]
+    fn current_core_matches_ux_benchmark_cases_with_lua_threads() {
+        let expected = [
+            ("ux-tag-voucher-pack", None),
+            ("ux-pack-joker-only", Some("M8511111")),
+            ("ux-soul-arcana-only", Some("EF311111")),
+            ("ux-tag-pack-joker", None),
+            ("ux-voucher-any-joker", None),
+            ("ux-tag-soul-pack", Some("EF311111")),
+            ("ux-tag-observatory", Some("U8411111")),
+            ("ux-erratic-tag-suit", None),
+        ];
+
+        for (case_name, expected_seed) in expected {
+            let case = crate::bench_cases::bench_cases()
+                .into_iter()
+                .find(|case| case.name == case_name)
+                .expect("missing UX benchmark case");
+            let cfg = FilterConfig::from_raw(
+                case.voucher,
+                case.pack,
+                case.tag1,
+                case.tag2,
+                case.joker,
+                case.joker_location,
+                case.souls,
+                case.observatory,
+                case.perkeo,
+                case.deck,
+                case.erratic,
+                case.no_faces,
+                case.min_face_cards,
+                case.suit_ratio,
             );
             assert_eq!(
-                brainstorm_search_core_v2("", &cfg, budget, 1),
-                brainstorm_search_core("", &cfg, budget, 1),
-                "V2 mismatch for {name}",
+                brainstorm_search_core(case.seed_start, &cfg, 100_000, 0).as_deref(),
+                expected_seed,
+                "current Rust mismatch for UI benchmark case {}",
+                case.name,
             );
         }
     }
 
     #[test]
-    fn v2_rejects_static_no_match_filters() {
-        use crate::v2::config::{CompiledFilter, KernelShape};
+    fn current_core_rejects_static_no_match_filters() {
+        use crate::v3::config::{CompiledFilter, KernelShape};
 
         let cases = [
+            (
+                "ante-1 locked tag",
+                FilterConfig::from_raw(
+                    "",
+                    "",
+                    "tag_buffoon",
+                    "",
+                    "",
+                    "any",
+                    0.0,
+                    false,
+                    false,
+                    "b_red",
+                    false,
+                    false,
+                    0,
+                    0.0,
+                ),
+            ),
             (
                 "legendary shop joker",
                 FilterConfig::from_raw(
@@ -612,46 +523,6 @@ mod tests {
                     0.0,
                 ),
             ),
-        ];
-
-        for (name, cfg) in cases {
-            assert_eq!(
-                CompiledFilter::compile(&cfg).shape,
-                KernelShape::NoMatch,
-                "{name} should be rejected before seed scanning",
-            );
-            assert_eq!(
-                brainstorm_search_core_v2("", &cfg, 10_000, 1),
-                brainstorm_search_core("", &cfg, 10_000, 1),
-                "V2 mismatch for {name}",
-            );
-        }
-    }
-
-    #[test]
-    fn v3_rejects_static_no_match_filters() {
-        use crate::v3::config::{CompiledFilter, KernelShape};
-
-        let cases = [
-            (
-                "ante-1 locked tag",
-                FilterConfig::from_raw(
-                    "",
-                    "",
-                    "tag_buffoon",
-                    "",
-                    "",
-                    "any",
-                    0.0,
-                    false,
-                    false,
-                    "b_red",
-                    false,
-                    false,
-                    0,
-                    0.0,
-                ),
-            ),
             (
                 "legendary shop joker",
                 FilterConfig::from_raw(
@@ -687,9 +558,9 @@ mod tests {
                 "{name} should be rejected before seed scanning",
             );
             assert_eq!(
-                brainstorm_search_core_v3("", &cfg, 10_000, 1),
-                brainstorm_search_core_v2("", &cfg, 10_000, 1),
-                "V3 mismatch for {name}",
+                brainstorm_search_core("", &cfg, 10_000, 1),
+                None,
+                "current Rust should reject {name}",
             );
         }
     }

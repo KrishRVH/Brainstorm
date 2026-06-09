@@ -19,6 +19,7 @@ pub enum KernelShape {
     Souls,
     Perkeo,
     Erratic,
+    Composite,
     Generic,
 }
 
@@ -66,6 +67,7 @@ impl CompiledFilter {
         match self.shape {
             KernelShape::Erratic => 16_384,
             KernelShape::ShopJoker | KernelShape::PackJoker | KernelShape::AnyJoker => 32_768,
+            KernelShape::Composite => 4_096,
             KernelShape::Generic => 262_144,
             _ => 65_536,
         }
@@ -115,7 +117,7 @@ fn classify(
             || raw.perkeo
             || has_erratic
         {
-            KernelShape::Generic
+            KernelShape::Composite
         } else {
             KernelShape::TagOnly
         };
@@ -123,31 +125,31 @@ fn classify(
     if has_voucher {
         return if has_pack || raw.observatory || has_joker || has_souls || raw.perkeo || has_erratic
         {
-            KernelShape::Generic
+            KernelShape::Composite
         } else {
             KernelShape::VoucherOnly
         };
     }
     if has_erratic {
         return if has_pack || raw.observatory || has_joker || has_souls || raw.perkeo {
-            KernelShape::Generic
+            KernelShape::Composite
         } else {
             KernelShape::Erratic
         };
     }
     if raw.observatory {
         return if has_pack || has_joker || has_souls || raw.perkeo {
-            KernelShape::Generic
+            KernelShape::Composite
         } else {
             KernelShape::Observatory
         };
     }
     if has_joker {
         if has_souls || raw.perkeo {
-            return KernelShape::Generic;
+            return KernelShape::Composite;
         }
         if has_pack && wants_joker_shop && !wants_joker_pack {
-            return KernelShape::Generic;
+            return KernelShape::Composite;
         }
         return if wants_joker_shop && wants_joker_pack {
             KernelShape::AnyJoker
@@ -159,7 +161,7 @@ fn classify(
     }
     if has_souls {
         return if raw.perkeo {
-            KernelShape::Generic
+            KernelShape::Composite
         } else {
             KernelShape::Souls
         };

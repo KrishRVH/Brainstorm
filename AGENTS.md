@@ -8,11 +8,12 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 
 ## Project Structure & Module Organization
 - Lua entry/UI: `Brainstorm.lua`, `UI.lua`; config/compat in `config.lua`, `lovely.toml`, `nativefs.lua`, `steamodded_compat.lua`.
-- Native sources: `Immolate/Rust/` is the primary Rust DLL implementation. `Immolate/*.cpp` and `Immolate/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/brainstorm.cpp`).
-- Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use the repo `Makefile`; C++ and Rust oracle artifacts are kept under `target/cpp/` and `target/rust/`.
+- Native sources: `Immolate/Rust/` is the only Rust DLL implementation. `Immolate/*.cpp` and `Immolate/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/brainstorm.cpp`).
+- Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use the repo `Makefile`; the C++ oracle artifact is kept under `target/cpp/`, and the current Rust artifact is kept under `target/rust/`.
+- Rust candidate iteration is artifact-based: keep the in-repo Rust implementation singular, and compare future experimental DLLs with `RUST_CANDIDATE_DLL=/path/to/Immolate.dll`.
 - `BalatroSource/` is the literal game source; never commit it to git and always use it as the source of truth for understanding game behavior.
 - `BalatroSource_Guide.md` summarizes seed/search-relevant mechanics verified from `BalatroSource/`.
-- Logging is currently disabled (commented out) in both Lua and C++; keep it off unless explicitly re-enabled.
+- Logging is currently disabled in Lua/C++ and the Rust `immolate_set_log_path` export is a no-op; keep it off unless explicitly re-enabled.
 
 ## Build and Development Commands
 - Build: `make build` outputs the Rust `Immolate.dll`.
@@ -20,6 +21,8 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 - Rust validation: `make check-rust`.
 - C++ vs Rust parity: `make compare`.
 - Benchmarks: `make bench-compare`.
+- Strict full-suite benchmark gate: `make bench-compare BENCH_CASE=all BENCH_BUDGET=100000 BENCH_REPEAT=5 BENCH_WARMUP=2 BENCH_THREADS=1 BENCH_FORMAT=tsv BENCH_COLOR=never BENCH_MIN_RATIO=1.0`.
+- Actual Lua UI UX benchmark gate: `make bench-compare BENCH_CASE=ux BENCH_BUDGET=100000 BENCH_REPEAT=5 BENCH_WARMUP=2 BENCH_THREADS=0 BENCH_FORMAT=tsv BENCH_COLOR=never BENCH_MIN_RATIO=1.0`.
 - Deploy: `make deploy TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm`.
 - Release: `make release` (builds the DLL and zips `release/Brainstorm_v3.1.zip`).
 - Formatting: `make format` (runs stylua/clang-format when available).
@@ -34,6 +37,7 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 - Joker search checks the first shop: location `shop` scans shop slots, `pack` scans Buffoon packs, `any` checks both (pack search respects the selected pack filter).
 - Soul checks only apply to Arcana/Spectral packs in the current shop slots.
 - Auto-reroll UI shows live scanned seed counts; SPF options go up to 100,000 seeds per pass.
+- Rust search must preserve earliest matching seed semantics for both single-thread and parallel searches. Benchmark result mismatches fail the harness, even when the timing is faster.
 
 ## Coding Style & Naming Conventions
 - Lua: Stylua (`stylua.toml`) — 2-space indent, ~80 cols. Avoid globals, return tables explicitly.

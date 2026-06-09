@@ -1,12 +1,11 @@
 use std::env;
+use std::hint::black_box;
 use std::process;
 use std::time::Instant;
 
+use immolate::brainstorm_search_core;
 use immolate::filters::FilterConfig;
-use immolate::search::brainstorm_search_core;
 use immolate::seed::Seed;
-use immolate::v2::brainstorm_search_core_v2;
-use immolate::v3::brainstorm_search_core_v3;
 
 #[path = "../bench_cases.rs"]
 mod bench_cases;
@@ -17,7 +16,7 @@ struct Args {
     budget: i64,
     threads: i32,
     repeat: usize,
-    engine: Engine,
+    warmup: usize,
 }
 
 impl Default for Args {
@@ -27,102 +26,74 @@ impl Default for Args {
             budget: 1_000_000,
             threads: 1,
             repeat: 3,
-            engine: Engine::V3,
+            warmup: 0,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Engine {
-    Base,
-    V2,
-    V3,
-    Both,
 }
 
 fn main() {
     let args = parse_args().unwrap_or_else(|message| {
         eprintln!("{message}");
         eprintln!(
-            "usage: brainstorm_bench [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--engine v3|v2|base|both]"
+            "usage: brainstorm_bench [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N]"
         );
         process::exit(2);
     });
 
+    let cases = bench_cases::selected_bench_cases(&args.case).unwrap_or_else(|err| {
+        eprintln!("{err}");
+        process::exit(2);
+    });
+
+    for case in cases.iter().copied() {
+        let cfg = case_config(case);
+        for _ in 0..args.warmup {
+            black_box(brainstorm_search_core(
+                case.seed_start,
+                &cfg,
+                args.budget,
+                args.threads,
+            ));
+        }
+    }
+
     println!(
         "engine\tcase\tgroup\tshape\tbudget\tscanned\tscan_pct\tthreads\trepeat\telapsed_ms\tseeds_per_sec\tns_per_seed\tresult\tnote"
     );
-    for case in bench_cases::selected_bench_cases(&args.case).unwrap_or_else(|err| {
-        eprintln!("{err}");
-        process::exit(2);
-    }) {
+    for case in cases {
         let cfg = case_config(case);
-        for engine in selected_engines(args.engine) {
-            for repeat in 1..=args.repeat {
-                let started = Instant::now();
-                let result = match engine {
-                    Engine::Base => {
-                        brainstorm_search_core(case.seed_start, &cfg, args.budget, args.threads)
-                    },
-                    Engine::V2 => {
-                        brainstorm_search_core_v2(case.seed_start, &cfg, args.budget, args.threads)
-                    },
-                    Engine::V3 => {
-                        brainstorm_search_core_v3(case.seed_start, &cfg, args.budget, args.threads)
-                    },
-                    Engine::Both => unreachable!("expanded by selected_engines"),
-                };
-                let elapsed = started.elapsed();
-                let elapsed_secs = elapsed.as_secs_f64();
-                let scanned = scanned_count(case.seed_start, result.as_deref(), args.budget);
-                let seeds_per_sec = if elapsed_secs > 0.0 {
-                    scanned as f64 / elapsed_secs
-                } else {
-                    f64::INFINITY
-                };
-                let result = match result.as_deref() {
-                    Some("") | None => "<null>",
-                    Some(seed) => seed,
-                };
-                println!(
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{:.6}\t{}\t{}\t{:.3}\t{:.0}\t{:.3}\t{}\t{}",
-                    engine.label(),
-                    case.name,
-                    case.group.label(),
-                    case.shape.label(),
-                    args.budget,
-                    scanned,
-                    scanned as f64 / args.budget as f64,
-                    args.threads,
-                    repeat,
-                    elapsed.as_secs_f64() * 1000.0,
-                    seeds_per_sec,
-                    elapsed_secs * 1_000_000_000.0 / scanned as f64,
-                    result,
-                    case.note,
-                );
-            }
+        for repeat in 1..=args.repeat {
+            let started = Instant::now();
+            let result = brainstorm_search_core(case.seed_start, &cfg, args.budget, args.threads);
+            let elapsed = started.elapsed();
+            let elapsed_secs = elapsed.as_secs_f64();
+            let scanned = scanned_count(case.seed_start, result.as_deref(), args.budget);
+            let seeds_per_sec = if elapsed_secs > 0.0 {
+                scanned as f64 / elapsed_secs
+            } else {
+                f64::INFINITY
+            };
+            let result = match result.as_deref() {
+                Some("") | None => "<null>",
+                Some(seed) => seed,
+            };
+            println!(
+                "current\t{}\t{}\t{}\t{}\t{}\t{:.6}\t{}\t{}\t{:.3}\t{:.0}\t{:.3}\t{}\t{}",
+                case.name,
+                case.group.label(),
+                case.shape.label(),
+                args.budget,
+                scanned,
+                scanned as f64 / args.budget as f64,
+                args.threads,
+                repeat,
+                elapsed.as_secs_f64() * 1000.0,
+                seeds_per_sec,
+                elapsed_secs * 1_000_000_000.0 / scanned as f64,
+                result,
+                case.note,
+            );
         }
-    }
-}
-
-impl Engine {
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Base => "base",
-            Self::V2 => "v2",
-            Self::V3 => "v3",
-            Self::Both => "both",
-        }
-    }
-}
-
-fn selected_engines(engine: Engine) -> &'static [Engine] {
-    match engine {
-        Engine::Base => &[Engine::Base],
-        Engine::V2 => &[Engine::V2],
-        Engine::V3 => &[Engine::V3],
-        Engine::Both => &[Engine::Base, Engine::V2, Engine::V3],
     }
 }
 
@@ -185,14 +156,10 @@ fn parse_args() -> Result<Args, String> {
                     return Err("--repeat must be positive".to_owned());
                 }
             },
-            "--engine" => {
-                args.engine = match value.as_str() {
-                    "base" => Engine::Base,
-                    "v2" => Engine::V2,
-                    "v3" => Engine::V3,
-                    "both" => Engine::Both,
-                    _ => return Err(format!("invalid --engine: {value}")),
-                };
+            "--warmup" => {
+                args.warmup = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --warmup: {value}"))?;
             },
             _ => return Err(format!("unknown argument: {flag}")),
         }

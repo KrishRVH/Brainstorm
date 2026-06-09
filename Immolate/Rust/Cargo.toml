@@ -12,8 +12,6 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-v1-legacy = []
-v2-baseline = []
 
 # Practical strict-by-default linting baseline.
 [lints.rust]

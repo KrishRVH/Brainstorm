@@ -549,7 +549,10 @@ mod windows_harness {
                 rust_base: rust_base_summary,
                 rust_candidate: rust_candidate_summary,
             };
-            if comparison.base_vs_cpp_ratio() < min_ratio {
+            if !comparison.base_matches_cpp() || comparison.base_vs_cpp_ratio() < min_ratio {
+                failed = true;
+            }
+            if !comparison.candidate_matches_cpp() {
                 failed = true;
             }
             if settings.output.format == OutputFormat::Tsv {
@@ -656,6 +659,16 @@ mod windows_harness {
 
         fn candidate(&self) -> Option<&BenchSummary> {
             self.rust_candidate.as_ref()
+        }
+
+        fn base_matches_cpp(&self) -> bool {
+            self.rust_base.result == self.cpp.result
+        }
+
+        fn candidate_matches_cpp(&self) -> bool {
+            self.rust_candidate
+                .as_ref()
+                .is_none_or(|candidate| candidate.result == self.cpp.result)
         }
     }
 
@@ -1802,7 +1815,9 @@ mod windows_harness {
         ratio: f64,
         target_ratio: f64,
     ) {
-        let status = if ratio >= target_ratio {
+        let status = if lhs.result != rhs.result {
+            "result-mismatch"
+        } else if ratio >= target_ratio {
             "ok"
         } else if relation == "rust-base-vs-cpp" {
             "regression"
@@ -1810,7 +1825,7 @@ mod windows_harness {
             "below-target"
         };
         println!(
-            "compare\t{}\t{}\t{}\t{}\t{}\t{:.0}\t{:.6}\t{}\t{}\t{:.3}\t{:.0}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\tratio={:.3};target_ratio={:.3};lhs={};rhs={};lhs_sps={:.0};rhs_sps={:.0};lhs_ms={:.3};rhs_ms={:.3}",
+            "compare\t{}\t{}\t{}\t{}\t{}\t{:.0}\t{:.6}\t{}\t{}\t{:.3}\t{:.0}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\tratio={:.3};target_ratio={:.3};lhs={};rhs={};lhs_sps={:.0};rhs_sps={:.0};lhs_ms={:.3};rhs_ms={:.3};lhs_result={};rhs_result={}",
             status,
             lhs.case_name,
             lhs.group.key(),
@@ -1838,10 +1853,12 @@ mod windows_harness {
             rhs.seeds_per_sec,
             ms(lhs.mean_elapsed),
             ms(rhs.mean_elapsed),
+            lhs.result,
+            rhs.result,
         );
     }
 
-    fn bench_group_order() -> [BenchGroup; 7] {
+    fn bench_group_order() -> [BenchGroup; 8] {
         [
             BenchGroup::Baseline,
             BenchGroup::Tags,
@@ -1850,6 +1867,7 @@ mod windows_harness {
             BenchGroup::Jokers,
             BenchGroup::Souls,
             BenchGroup::Deck,
+            BenchGroup::Ux,
         ]
     }
 
