@@ -6,4 +6,4 @@ pub mod seed;
 pub mod tables;
 pub mod trace;
 
-pub use search::brainstorm_search_core_v3;
+pub use search::brainstorm_search_core;

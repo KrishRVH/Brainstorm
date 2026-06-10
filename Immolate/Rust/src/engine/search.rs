@@ -2,14 +2,14 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::engine::config::{CompiledFilter, KernelShape};
+use crate::engine::kernels::apply_compiled_filter;
+use crate::engine::seed::SearchState;
 use crate::filters::FilterConfig;
 use crate::search::{resolve_seed_budget, resolve_threads};
 use crate::seed::{SEED_SPACE, Seed};
-use crate::v3::config::{CompiledFilter, KernelShape};
-use crate::v3::kernels::apply_compiled_filter;
-use crate::v3::seed::V3State;
 
-pub fn brainstorm_search_core_v3(
+pub fn brainstorm_search_core(
     seed_start: &str,
     cfg: &FilterConfig,
     num_seeds: i64,
@@ -17,11 +17,11 @@ pub fn brainstorm_search_core_v3(
 ) -> Option<String> {
     let budget = resolve_seed_budget(num_seeds);
     let compiled = CompiledFilter::compile(cfg);
-    let thread_count = resolve_threads_v3(budget, threads, compiled.shape);
+    let thread_count = resolve_threads_for_engine(budget, threads, compiled.shape);
     search_filters(seed_start, compiled, budget, thread_count)
 }
 
-fn resolve_threads_v3(num_seeds: i64, threads: i32, shape: KernelShape) -> usize {
+fn resolve_threads_for_engine(num_seeds: i64, threads: i32, shape: KernelShape) -> usize {
     if shape != KernelShape::Composite {
         return resolve_threads(threads);
     }
@@ -110,7 +110,7 @@ fn search_filters_exact_parallel(
 }
 
 fn search_block(start: i64, count: i64, cfg: &CompiledFilter) -> Option<String> {
-    let mut state = V3State::from_id(start);
+    let mut state = SearchState::from_id(start);
     for _ in 0..count {
         if apply_compiled_filter(&mut state, cfg) {
             return Some(state.seed.to_string());
@@ -121,7 +121,7 @@ fn search_block(start: i64, count: i64, cfg: &CompiledFilter) -> Option<String> 
 }
 
 fn search_block_indexed(start: i64, count: i64, cfg: &CompiledFilter) -> Option<(i64, String)> {
-    let mut state = V3State::from_id(start);
+    let mut state = SearchState::from_id(start);
     for offset in 0..count {
         if apply_compiled_filter(&mut state, cfg) {
             return Some((offset, state.seed.to_string()));

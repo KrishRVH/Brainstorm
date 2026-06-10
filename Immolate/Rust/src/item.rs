@@ -1,4 +1,4 @@
-// Generated mechanically from Immolate/items.hpp. Do not reorder entries by hand.
+// Generated mechanically from Immolate/CPP/items.hpp. Do not reorder entries by hand.
 #![allow(non_camel_case_types)]
 #![allow(clippy::match_same_arms)]
 

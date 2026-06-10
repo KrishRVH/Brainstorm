@@ -1,5 +1,6 @@
 [env]
 IMMO_DIR = "Immolate"
+CPP_DIR = "Immolate/CPP"
 RUST_DIR = "Immolate/Rust"
 DLL = "Immolate.dll"
 RELEASE_DIR = "release/Brainstorm_v3.1"
@@ -20,11 +21,11 @@ run = '''
 set -euo pipefail
 cpp_dll="$TARGET_DIR/cpp/$DLL"
 sources=(
-  "$IMMO_DIR/brainstorm.cpp"
-  "$IMMO_DIR/functions.cpp"
-  "$IMMO_DIR/rng.cpp"
-  "$IMMO_DIR/seed.cpp"
-  "$IMMO_DIR/util.cpp"
+  "$CPP_DIR/brainstorm.cpp"
+  "$CPP_DIR/functions.cpp"
+  "$CPP_DIR/rng.cpp"
+  "$CPP_DIR/seed.cpp"
+  "$CPP_DIR/util.cpp"
 )
 
 echo "Building $DLL"
@@ -41,7 +42,7 @@ x86_64-w64-mingw32-g++ \
   -DBUILDING_DLL \
   -o "$cpp_dll" \
   "${sources[@]}" \
-  -I "$IMMO_DIR" \
+  -I "$CPP_DIR" \
   -static-libgcc \
   -static-libstdc++ \
   -Wl,--export-all-symbols
@@ -151,16 +152,10 @@ cpp_dll="$TARGET_DIR/cpp/$DLL"
 rust_artifact="$TARGET_DIR/rust/$DLL"
 rust_target="${RUST_TARGET:-x86_64-pc-windows-gnu}"
 harness="$RUST_DIR/target/$rust_target/release/immolate_dll_harness.exe"
-base_dll="${RUST_BASE_DLL:-$rust_artifact}"
-candidate_args=()
-if [ -n "${RUST_CANDIDATE_DLL:-}" ]; then
-  candidate_args=(--rust-candidate "$(winepath -w "$(readlink -f "$RUST_CANDIDATE_DLL")")")
-fi
 
 wine "$harness" compare \
   --cpp "$(winepath -w "$(readlink -f "$cpp_dll")")" \
-  --rust-base "$(winepath -w "$(readlink -f "$base_dll")")" \
-  "${candidate_args[@]}" \
+  --rust "$(winepath -w "$(readlink -f "$rust_artifact")")" \
   --threads 1
 '''
 
@@ -227,7 +222,7 @@ wine "$harness" bench \
 '''
 
 [tasks.bench-compare]
-description = "Benchmark C++ vs current Rust, optionally with RUST_CANDIDATE_DLL"
+description = "Benchmark C++ vs Rust"
 shell = "bash -c"
 run = '''
 set -euo pipefail
@@ -239,34 +234,24 @@ cpp_dll="$TARGET_DIR/cpp/$DLL"
 rust_artifact="$TARGET_DIR/rust/$DLL"
 rust_target="${RUST_TARGET:-x86_64-pc-windows-gnu}"
 harness="$RUST_DIR/target/$rust_target/release/immolate_dll_harness.exe"
-base_dll="${RUST_BASE_DLL:-$rust_artifact}"
 bench_case="${BENCH_CASE:-all}"
 bench_budget="${BENCH_BUDGET:-1000000}"
 bench_threads="${BENCH_THREADS:-1}"
 bench_repeat="${BENCH_REPEAT:-5}"
 bench_warmup="${BENCH_WARMUP:-1}"
 bench_min_ratio="${BENCH_MIN_RATIO:-1.0}"
-candidate_min_ratio="${BENCH_CANDIDATE_MIN_RATIO:-0}"
-candidate_min_scan_pct="${BENCH_CANDIDATE_MIN_SCAN_PCT:-0.95}"
 bench_format="${BENCH_FORMAT:-pretty}"
 bench_color="${BENCH_COLOR:-auto}"
-candidate_args=()
-if [ -n "${RUST_CANDIDATE_DLL:-}" ]; then
-  candidate_args=(--rust-candidate "$(winepath -w "$(readlink -f "$RUST_CANDIDATE_DLL")")")
-fi
 
 wine "$harness" bench-compare \
   --cpp "$(winepath -w "$(readlink -f "$cpp_dll")")" \
-  --rust-base "$(winepath -w "$(readlink -f "$base_dll")")" \
-  "${candidate_args[@]}" \
+  --rust "$(winepath -w "$(readlink -f "$rust_artifact")")" \
   --case "$bench_case" \
   --budget "$bench_budget" \
   --threads "$bench_threads" \
   --repeat "$bench_repeat" \
   --warmup "$bench_warmup" \
   --min-ratio "$bench_min_ratio" \
-  --candidate-min-ratio "$candidate_min_ratio" \
-  --candidate-min-scan-pct "$candidate_min_scan_pct" \
   --format "$bench_format" \
   --color "$bench_color"
 '''
@@ -348,7 +333,7 @@ else
 fi
 
 if command -v clang-format >/dev/null; then
-  clang-format -i "$IMMO_DIR"/*.cpp "$IMMO_DIR"/*.hpp
+  clang-format -i "$CPP_DIR"/*.cpp "$CPP_DIR"/*.hpp
 else
   echo "clang-format not found"
 fi
@@ -372,7 +357,7 @@ else
 fi
 
 if command -v clang-format >/dev/null; then
-  clang-format --dry-run -Werror "$IMMO_DIR"/*.cpp "$IMMO_DIR"/*.hpp
+  clang-format --dry-run -Werror "$CPP_DIR"/*.cpp "$CPP_DIR"/*.hpp
 else
   echo "clang-format not found"
 fi

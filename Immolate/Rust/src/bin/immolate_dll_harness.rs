@@ -251,8 +251,7 @@ mod windows_harness {
     enum Command {
         Compare {
             cpp: String,
-            rust_base: String,
-            rust_candidate: Option<String>,
+            rust: String,
             threads: i32,
         },
         Bench {
@@ -266,29 +265,21 @@ mod windows_harness {
         },
         BenchCompare {
             cpp: String,
-            rust_base: String,
-            rust_candidate: Option<String>,
+            rust: String,
             case: String,
             budget: i64,
             threads: i32,
             repeat: usize,
             warmup: usize,
             min_ratio: f64,
-            candidate_min_ratio: f64,
-            candidate_min_scan_pct: f64,
             output: OutputOptions,
         },
     }
 
     pub fn main() {
         match parse_command(env::args().skip(1).collect()) {
-            Ok(Command::Compare {
-                cpp,
-                rust_base,
-                rust_candidate,
-                threads,
-            }) => {
-                if let Err(err) = compare(&cpp, &rust_base, rust_candidate.as_deref(), threads) {
+            Ok(Command::Compare { cpp, rust, threads }) => {
+                if let Err(err) = compare(&cpp, &rust, threads) {
                     eprintln!("{err}");
                     std::process::exit(1);
                 }
@@ -317,16 +308,13 @@ mod windows_harness {
             },
             Ok(Command::BenchCompare {
                 cpp,
-                rust_base,
-                rust_candidate,
+                rust,
                 case,
                 budget,
                 threads,
                 repeat,
                 warmup,
                 min_ratio,
-                candidate_min_ratio,
-                candidate_min_scan_pct,
                 output,
             }) => {
                 let settings = BenchSettings {
@@ -337,15 +325,7 @@ mod windows_harness {
                     warmup,
                     output,
                 };
-                if let Err(err) = bench_compare(
-                    &cpp,
-                    &rust_base,
-                    rust_candidate.as_deref(),
-                    settings,
-                    min_ratio,
-                    candidate_min_ratio,
-                    candidate_min_scan_pct,
-                ) {
+                if let Err(err) = bench_compare(&cpp, &rust, settings, min_ratio) {
                     eprintln!("{err}");
                     std::process::exit(1);
                 }
@@ -353,70 +333,38 @@ mod windows_harness {
             Err(err) => {
                 eprintln!("{err}");
                 eprintln!(
-                    "usage:\n  immolate_dll_harness compare --cpp PATH --rust-base PATH [--rust-candidate PATH] [--threads N]\n  immolate_dll_harness bench --dll PATH [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N] [--format pretty|tsv] [--color auto|always|never]\n  immolate_dll_harness bench-compare --cpp PATH --rust-base PATH [--rust-candidate PATH] [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N] [--min-ratio N] [--candidate-min-ratio N] [--candidate-min-scan-pct N] [--format pretty|tsv] [--color auto|always|never]"
+                    "usage:\n  immolate_dll_harness compare --cpp PATH --rust PATH [--threads N]\n  immolate_dll_harness bench --dll PATH [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N] [--format pretty|tsv] [--color auto|always|never]\n  immolate_dll_harness bench-compare --cpp PATH --rust PATH [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N] [--min-ratio N] [--format pretty|tsv] [--color auto|always|never]"
                 );
                 std::process::exit(2);
             },
         }
     }
 
-    fn compare(
-        cpp_path: &str,
-        rust_base_path: &str,
-        rust_candidate_path: Option<&str>,
-        threads: i32,
-    ) -> Result<(), String> {
+    fn compare(cpp_path: &str, rust_path: &str, threads: i32) -> Result<(), String> {
         let cpp = Dll::load(cpp_path)?;
-        let rust_base = Dll::load(rust_base_path)?;
-        let rust_candidate = rust_candidate_path.map(Dll::load).transpose()?;
+        let rust = Dll::load(rust_path)?;
         let mut failed = false;
-        if rust_candidate.is_some() {
-            println!("status\tcase\tcpp\trust-base\trust-candidate");
-        } else {
-            println!("status\tcase\tcpp\trust-base");
-        }
+        println!("status\tcase\tcpp\trust");
         for mut case in compare_cases() {
             if threads != 1 {
                 case.threads = threads;
             }
             let cpp_result = cpp.run(&case)?;
-            let rust_base_result = rust_base.run(&case)?;
-            let rust_candidate_result = rust_candidate
-                .as_ref()
-                .map(|dll| dll.run(&case))
-                .transpose()?;
-            let status = if cpp_result == rust_base_result
-                && rust_candidate_result
-                    .as_ref()
-                    .is_none_or(|candidate| candidate == &cpp_result)
-            {
+            let rust_result = rust.run(&case)?;
+            let status = if cpp_result == rust_result {
                 "ok"
             } else {
                 failed = true;
                 "mismatch"
             };
-            if let Some(candidate_result) = rust_candidate_result.as_ref() {
-                println!(
-                    "{status}\t{}\t{}\t{}\t{}",
-                    case.name,
-                    display_result(cpp_result.as_deref()),
-                    display_result(rust_base_result.as_deref()),
-                    display_result(candidate_result.as_deref()),
-                );
-            } else {
-                println!(
-                    "{status}\t{}\t{}\t{}",
-                    case.name,
-                    display_result(cpp_result.as_deref()),
-                    display_result(rust_base_result.as_deref()),
-                );
-            }
+            println!(
+                "{status}\t{}\t{}\t{}",
+                case.name,
+                display_result(cpp_result.as_deref()),
+                display_result(rust_result.as_deref()),
+            );
         }
-        let mut stress_dlls = vec![("cpp", &cpp), ("rust-base", &rust_base)];
-        if let Some(candidate) = rust_candidate.as_ref() {
-            stress_dlls.push(("rust-candidate", candidate));
-        }
-        for (name, dll) in stress_dlls {
+        for (name, dll) in [("cpp", &cpp), ("rust", &rust)] {
             let stress = repeated_alloc_free(dll, 100)?;
             if stress {
                 println!("ok\talloc_free_stress_100_{name}\t1\t1");
@@ -468,12 +416,9 @@ mod windows_harness {
 
     fn bench_compare(
         cpp_path: &str,
-        rust_base_path: &str,
-        rust_candidate_path: Option<&str>,
+        rust_path: &str,
         settings: BenchSettings<'_>,
         min_ratio: f64,
-        candidate_min_ratio: f64,
-        candidate_min_scan_pct: f64,
     ) -> Result<(), String> {
         if settings.budget <= 0 {
             return Err("--budget must be positive".to_owned());
@@ -484,29 +429,15 @@ mod windows_harness {
         if min_ratio <= 0.0 {
             return Err("--min-ratio must be positive".to_owned());
         }
-        if candidate_min_ratio < 0.0 {
-            return Err("--candidate-min-ratio must be non-negative".to_owned());
-        }
-        if candidate_min_ratio > 0.0 && rust_candidate_path.is_none() {
-            return Err("--candidate-min-ratio requires --rust-candidate".to_owned());
-        }
-        if !(0.0..=1.0).contains(&candidate_min_scan_pct) {
-            return Err("--candidate-min-scan-pct must be between 0 and 1".to_owned());
-        }
         let cpp = Dll::load(cpp_path)?;
-        let rust_base = Dll::load(rust_base_path)?;
-        let rust_candidate = rust_candidate_path.map(Dll::load).transpose()?;
+        let rust = Dll::load(rust_path)?;
         let cases =
             selected_bench_cases(settings.selected_case, settings.budget, settings.threads)?;
         if settings.output.format == OutputFormat::Tsv {
             print_tsv_header();
         } else {
             print_run_header(
-                if rust_candidate.is_some() {
-                    "Brainstorm DLL Benchmark: C++ vs Rust-base vs Rust-candidate"
-                } else {
-                    "Brainstorm DLL Benchmark: C++ vs Rust-base"
-                },
+                "Brainstorm DLL Benchmark: C++ vs Rust",
                 settings,
                 cases.len(),
             );
@@ -523,36 +454,19 @@ mod windows_harness {
                 "cpp",
                 settings.output,
             )?;
-            let rust_base_summary = measure_bench_case(
-                &rust_base,
+            let rust_summary = measure_bench_case(
+                &rust,
                 case,
                 settings.repeat,
                 settings.warmup,
-                "rust-base",
+                "rust",
                 settings.output,
             )?;
-            let rust_candidate_summary = rust_candidate
-                .as_ref()
-                .map(|dll| {
-                    measure_bench_case(
-                        dll,
-                        case,
-                        settings.repeat,
-                        settings.warmup,
-                        "rust-candidate",
-                        settings.output,
-                    )
-                })
-                .transpose()?;
             let comparison = BenchComparison {
                 cpp: cpp_summary,
-                rust_base: rust_base_summary,
-                rust_candidate: rust_candidate_summary,
+                rust: rust_summary,
             };
-            if !comparison.base_matches_cpp() || comparison.base_vs_cpp_ratio() < min_ratio {
-                failed = true;
-            }
-            if !comparison.candidate_matches_cpp() {
+            if !comparison.rust_matches_cpp() || comparison.rust_vs_cpp_ratio() < min_ratio {
                 failed = true;
             }
             if settings.output.format == OutputFormat::Tsv {
@@ -562,31 +476,6 @@ mod windows_harness {
         }
         if settings.output.format == OutputFormat::Pretty {
             print_compare_report(&comparisons, min_ratio, settings.output);
-        }
-        if rust_candidate.is_some() {
-            let aggregate = candidate_full_budget_gmean(&comparisons, candidate_min_scan_pct);
-            if settings.output.format == OutputFormat::Tsv {
-                print_tsv_candidate_aggregate(
-                    aggregate.as_ref(),
-                    settings,
-                    candidate_min_ratio,
-                    candidate_min_scan_pct,
-                );
-            } else {
-                print_candidate_aggregate(
-                    aggregate.as_ref(),
-                    candidate_min_ratio,
-                    candidate_min_scan_pct,
-                    settings.output,
-                );
-            }
-            if candidate_min_ratio > 0.0
-                && aggregate
-                    .as_ref()
-                    .is_none_or(|aggregate| aggregate.ratio < candidate_min_ratio)
-            {
-                failed = true;
-            }
         }
         if failed {
             Err("benchmark regression threshold failed".to_owned())
@@ -631,78 +520,17 @@ mod windows_harness {
 
     struct BenchComparison {
         cpp: BenchSummary,
-        rust_base: BenchSummary,
-        rust_candidate: Option<BenchSummary>,
-    }
-
-    struct CandidateAggregate {
-        ratio: f64,
-        cases: usize,
+        rust: BenchSummary,
     }
 
     impl BenchComparison {
-        fn base_vs_cpp_ratio(&self) -> f64 {
-            self.rust_base.seeds_per_sec / self.cpp.seeds_per_sec
+        fn rust_vs_cpp_ratio(&self) -> f64 {
+            self.rust.seeds_per_sec / self.cpp.seeds_per_sec
         }
 
-        fn candidate_vs_cpp_ratio(&self) -> Option<f64> {
-            self.rust_candidate
-                .as_ref()
-                .map(|candidate| candidate.seeds_per_sec / self.cpp.seeds_per_sec)
+        fn rust_matches_cpp(&self) -> bool {
+            self.rust.result == self.cpp.result
         }
-
-        fn candidate_vs_base_ratio(&self) -> Option<f64> {
-            self.rust_candidate
-                .as_ref()
-                .map(|candidate| candidate.seeds_per_sec / self.rust_base.seeds_per_sec)
-        }
-
-        fn candidate(&self) -> Option<&BenchSummary> {
-            self.rust_candidate.as_ref()
-        }
-
-        fn base_matches_cpp(&self) -> bool {
-            self.rust_base.result == self.cpp.result
-        }
-
-        fn candidate_matches_cpp(&self) -> bool {
-            self.rust_candidate
-                .as_ref()
-                .is_none_or(|candidate| candidate.result == self.cpp.result)
-        }
-    }
-
-    fn candidate_full_budget_gmean(
-        comparisons: &[BenchComparison],
-        min_scan_pct: f64,
-    ) -> Option<CandidateAggregate> {
-        let mut cases = 0;
-        let mut log_sum = 0.0;
-        for comparison in comparisons {
-            let Some(candidate) = comparison.candidate() else {
-                continue;
-            };
-            if comparison.rust_base.shape == BenchShape::Hit {
-                continue;
-            }
-            if comparison.rust_base.result != "<null>" || candidate.result != "<null>" {
-                continue;
-            }
-            if comparison.rust_base.scanned_pct < min_scan_pct
-                || candidate.scanned_pct < min_scan_pct
-            {
-                continue;
-            }
-            let ratio = candidate.seeds_per_sec / comparison.rust_base.seeds_per_sec;
-            if ratio > 0.0 && ratio.is_finite() {
-                cases += 1;
-                log_sum += ratio.ln();
-            }
-        }
-        (cases > 0).then(|| CandidateAggregate {
-            ratio: (log_sum / cases as f64).exp(),
-            cases,
-        })
     }
 
     fn measure_bench_case(
@@ -827,20 +655,15 @@ mod windows_harness {
         match mode.as_str() {
             "compare" => {
                 let mut cpp = None;
-                let mut rust_base = None;
-                let mut rust_candidate = None;
+                let mut rust = None;
                 let mut threads = 1;
                 parse_flags(&args[1..], |flag, value| match flag {
                     "--cpp" => {
                         cpp = Some(value.to_owned());
                         Ok(())
                     },
-                    "--rust" | "--rust-base" => {
-                        rust_base = Some(value.to_owned());
-                        Ok(())
-                    },
-                    "--rust-candidate" => {
-                        rust_candidate = Some(value.to_owned());
+                    "--rust" => {
+                        rust = Some(value.to_owned());
                         Ok(())
                     },
                     "--threads" => {
@@ -851,8 +674,7 @@ mod windows_harness {
                 })?;
                 Ok(Command::Compare {
                     cpp: cpp.ok_or_else(|| "missing --cpp".to_owned())?,
-                    rust_base: rust_base.ok_or_else(|| "missing --rust-base".to_owned())?,
-                    rust_candidate,
+                    rust: rust.ok_or_else(|| "missing --rust".to_owned())?,
                     threads,
                 })
             },
@@ -911,28 +733,21 @@ mod windows_harness {
             },
             "bench-compare" => {
                 let mut cpp = None;
-                let mut rust_base = None;
-                let mut rust_candidate = None;
+                let mut rust = None;
                 let mut case = "all".to_owned();
                 let mut budget = 1_000_000;
                 let mut threads = 1;
                 let mut repeat = 5;
                 let mut warmup = 1;
                 let mut min_ratio = 0.8;
-                let mut candidate_min_ratio = 0.0;
-                let mut candidate_min_scan_pct = 0.95;
                 let mut output = OutputOptions::default();
                 parse_flags(&args[1..], |flag, value| match flag {
                     "--cpp" => {
                         cpp = Some(value.to_owned());
                         Ok(())
                     },
-                    "--rust" | "--rust-base" => {
-                        rust_base = Some(value.to_owned());
-                        Ok(())
-                    },
-                    "--rust-candidate" => {
-                        rust_candidate = Some(value.to_owned());
+                    "--rust" => {
+                        rust = Some(value.to_owned());
                         Ok(())
                     },
                     "--case" => {
@@ -959,14 +774,6 @@ mod windows_harness {
                         min_ratio = parse_value(value, "--min-ratio")?;
                         Ok(())
                     },
-                    "--candidate-min-ratio" => {
-                        candidate_min_ratio = parse_value(value, "--candidate-min-ratio")?;
-                        Ok(())
-                    },
-                    "--candidate-min-scan-pct" => {
-                        candidate_min_scan_pct = parse_value(value, "--candidate-min-scan-pct")?;
-                        Ok(())
-                    },
                     "--format" => {
                         output.format = parse_output_format(value)?;
                         Ok(())
@@ -979,16 +786,13 @@ mod windows_harness {
                 })?;
                 Ok(Command::BenchCompare {
                     cpp: cpp.ok_or_else(|| "missing --cpp".to_owned())?,
-                    rust_base: rust_base.ok_or_else(|| "missing --rust-base".to_owned())?,
-                    rust_candidate,
+                    rust: rust.ok_or_else(|| "missing --rust".to_owned())?,
                     case,
                     budget,
                     threads,
                     repeat,
                     warmup,
                     min_ratio,
-                    candidate_min_ratio,
-                    candidate_min_scan_pct,
                     output,
                 })
             },
@@ -1229,433 +1033,170 @@ mod windows_harness {
         output: OutputOptions,
     ) {
         let color = output.use_color();
-        let has_candidate = comparisons
-            .iter()
-            .any(|comparison| comparison.candidate().is_some());
         print_section("Case Comparison", color);
-        if has_candidate {
-            println!(
-                "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {:>11} {:>10} {:>10} {:>10} {:>18} samples",
-                "case",
-                "group",
-                "shape",
-                "scan",
-                "base/s",
-                "cand/s",
-                "cpp/s",
-                "base/cpp",
-                "cand/cpp",
-                "cand/base",
-                "ns/seed B/K/C",
+        println!(
+            "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {:>10} {:>15} {:>17} {:>11} samples",
+            "case",
+            "group",
+            "shape",
+            "scan",
+            "rust/s",
+            "cpp/s",
+            "rust/cpp",
+            "mean ms R/C",
+            "ns/seed R/C",
+            "cv R/C",
+        );
+        println!("{}", paint(color, ANSI_DIM, &"─".repeat(150)));
+        for comparison in comparisons {
+            let rust_ratio = comparison.rust_vs_cpp_ratio();
+            let ratio = paint(
+                color,
+                ratio_color(rust_ratio, min_ratio),
+                &format!("{rust_ratio:>10.3}x"),
             );
-            println!("{}", paint(color, ANSI_DIM, &"─".repeat(170)));
-            for comparison in comparisons {
-                let candidate = comparison
-                    .candidate()
-                    .expect("candidate presence checked before report");
-                let base_ratio = comparison.base_vs_cpp_ratio();
-                let candidate_cpp_ratio = comparison
-                    .candidate_vs_cpp_ratio()
-                    .expect("candidate presence checked before report");
-                let candidate_base_ratio = comparison
-                    .candidate_vs_base_ratio()
-                    .expect("candidate presence checked before report");
-                println!(
-                    "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {:>11} {} {} {} {:>18} B{} K{} C{}",
-                    comparison.rust_base.case_name,
-                    comparison.rust_base.group.label(),
-                    comparison.rust_base.shape.label(),
-                    format!("{:.1}%", comparison.rust_base.scanned_pct * 100.0),
-                    format_rate(comparison.rust_base.seeds_per_sec),
-                    format_rate(candidate.seeds_per_sec),
-                    format_rate(comparison.cpp.seeds_per_sec),
-                    paint(
-                        color,
-                        ratio_color(base_ratio, min_ratio),
-                        &format!("{base_ratio:>10.3}x"),
-                    ),
-                    paint(
-                        color,
-                        ratio_color(candidate_cpp_ratio, min_ratio),
-                        &format!("{candidate_cpp_ratio:>10.3}x"),
-                    ),
-                    paint(
-                        color,
-                        ratio_color(candidate_base_ratio, 1.0),
-                        &format!("{candidate_base_ratio:>10.3}x"),
-                    ),
-                    format!(
-                        "{}/{}/{}",
-                        format_ns(comparison.rust_base.ns_per_seed),
-                        format_ns(candidate.ns_per_seed),
-                        format_ns(comparison.cpp.ns_per_seed)
-                    ),
-                    sparkline(&comparison.rust_base.runs),
-                    sparkline(&candidate.runs),
-                    sparkline(&comparison.cpp.runs),
-                );
-            }
-        } else {
-            println!(
-                "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {:>10} {:>15} {:>17} {:>11} samples",
-                "case",
-                "group",
-                "shape",
-                "scan",
-                "rust-base/s",
-                "cpp/s",
-                "base/cpp",
-                "mean ms B/C",
-                "ns/seed B/C",
-                "cv B/C",
+            let cv_pair = format!(
+                "{:.1}/{:.1}%",
+                comparison.rust.coefficient_variation * 100.0,
+                comparison.cpp.coefficient_variation * 100.0,
             );
-            println!("{}", paint(color, ANSI_DIM, &"─".repeat(150)));
-            for comparison in comparisons {
-                let base_ratio = comparison.base_vs_cpp_ratio();
-                let ratio = paint(
-                    color,
-                    ratio_color(base_ratio, min_ratio),
-                    &format!("{base_ratio:>10.3}x"),
-                );
-                let cv_pair = format!(
-                    "{:.1}/{:.1}%",
-                    comparison.rust_base.coefficient_variation * 100.0,
-                    comparison.cpp.coefficient_variation * 100.0,
-                );
-                println!(
-                    "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {} {:>15} {:>17} {:>11} B{} C{}",
-                    comparison.rust_base.case_name,
-                    comparison.rust_base.group.label(),
-                    comparison.rust_base.shape.label(),
-                    format!("{:.1}%", comparison.rust_base.scanned_pct * 100.0),
-                    format_rate(comparison.rust_base.seeds_per_sec),
-                    format_rate(comparison.cpp.seeds_per_sec),
-                    ratio,
-                    format!(
-                        "{:.3}/{:.3}",
-                        ms(comparison.rust_base.mean_elapsed),
-                        ms(comparison.cpp.mean_elapsed)
-                    ),
-                    format!(
-                        "{}/{}",
-                        format_ns(comparison.rust_base.ns_per_seed),
-                        format_ns(comparison.cpp.ns_per_seed)
-                    ),
-                    cv_pair,
-                    sparkline(&comparison.rust_base.runs),
-                    sparkline(&comparison.cpp.runs),
-                );
-            }
+            println!(
+                "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {} {:>15} {:>17} {:>11} R{} C{}",
+                comparison.rust.case_name,
+                comparison.rust.group.label(),
+                comparison.rust.shape.label(),
+                format!("{:.1}%", comparison.rust.scanned_pct * 100.0),
+                format_rate(comparison.rust.seeds_per_sec),
+                format_rate(comparison.cpp.seeds_per_sec),
+                ratio,
+                format!(
+                    "{:.3}/{:.3}",
+                    ms(comparison.rust.mean_elapsed),
+                    ms(comparison.cpp.mean_elapsed)
+                ),
+                format!(
+                    "{}/{}",
+                    format_ns(comparison.rust.ns_per_seed),
+                    format_ns(comparison.cpp.ns_per_seed)
+                ),
+                cv_pair,
+                sparkline(&comparison.rust.runs),
+                sparkline(&comparison.cpp.runs),
+            );
         }
-        print_group_report(comparisons, min_ratio, color, has_candidate);
-        print_ranked_report(comparisons, min_ratio, color, has_candidate);
+        print_group_report(comparisons, min_ratio, color);
+        print_ranked_report(comparisons, min_ratio, color);
         print_noise_report(comparisons, color);
     }
 
-    fn print_candidate_aggregate(
-        aggregate: Option<&CandidateAggregate>,
-        target_ratio: f64,
-        min_scan_pct: f64,
-        output: OutputOptions,
-    ) {
-        let color = output.use_color();
-        print_section("Rust-candidate Non-hit Full-budget Gmean", color);
-        let target = if target_ratio > 0.0 {
-            format!("{target_ratio:.3}x target")
-        } else {
-            "informational".to_owned()
-        };
-        match aggregate {
-            Some(aggregate) => {
-                let color_code = if target_ratio > 0.0 {
-                    ratio_color(aggregate.ratio, target_ratio)
-                } else {
-                    ANSI_CYAN
-                };
-                println!(
-                    "  {} across {} cases with scan >= {:.1}% ({})",
-                    paint(color, color_code, &format!("{:.3}x", aggregate.ratio)),
-                    aggregate.cases,
-                    min_scan_pct * 100.0,
-                    target,
-                );
-            },
-            None => println!(
-                "  no non-hit candidate/base cases met scan >= {:.1}% ({})",
-                min_scan_pct * 100.0,
-                target,
-            ),
-        }
-    }
-
-    fn print_group_report(
-        comparisons: &[BenchComparison],
-        min_ratio: f64,
-        color: bool,
-        has_candidate: bool,
-    ) {
+    fn print_group_report(comparisons: &[BenchComparison], min_ratio: f64, color: bool) {
         print_section("Group Speedups", color);
-        if has_candidate {
-            println!(
-                "{:<10} {:>5} {:>11} {:>11} {:>11} {:<20} {:<20} meter",
-                "group", "cases", "base/cpp", "cand/cpp", "cand/base", "best cand", "worst cand",
-            );
-            println!("{}", paint(color, ANSI_DIM, &"─".repeat(118)));
-        } else {
-            println!(
-                "{:<10} {:>5} {:>9} {:>12} {:<20} {:<20} meter",
-                "group", "cases", "base wins", "gmean", "best", "worst",
-            );
-            println!("{}", paint(color, ANSI_DIM, &"─".repeat(98)));
-        }
+        println!(
+            "{:<10} {:>5} {:>9} {:>12} {:<20} {:<20} meter",
+            "group", "cases", "rust wins", "gmean", "best", "worst",
+        );
+        println!("{}", paint(color, ANSI_DIM, &"─".repeat(98)));
         for group in bench_group_order() {
             let group_comparisons: Vec<_> = comparisons
                 .iter()
-                .filter(|comparison| comparison.rust_base.group == group)
+                .filter(|comparison| comparison.rust.group == group)
                 .collect();
             if group_comparisons.is_empty() {
                 continue;
             }
-            if has_candidate {
-                let base_gmean = geometric_mean(
-                    &group_comparisons
-                        .iter()
-                        .map(|comparison| comparison.base_vs_cpp_ratio())
-                        .collect::<Vec<_>>(),
-                );
-                let candidate_cpp_gmean = geometric_mean(
-                    &group_comparisons
-                        .iter()
-                        .filter_map(|comparison| comparison.candidate_vs_cpp_ratio())
-                        .collect::<Vec<_>>(),
-                );
-                let candidate_base_gmean = geometric_mean(
-                    &group_comparisons
-                        .iter()
-                        .filter_map(|comparison| comparison.candidate_vs_base_ratio())
-                        .collect::<Vec<_>>(),
-                );
-                let mut best = group_comparisons[0];
-                let mut worst = group_comparisons[0];
-                for comparison in &group_comparisons {
-                    if comparison.candidate_vs_base_ratio().unwrap_or(0.0)
-                        > best.candidate_vs_base_ratio().unwrap_or(0.0)
-                    {
-                        best = comparison;
-                    }
-                    if comparison
-                        .candidate_vs_base_ratio()
-                        .unwrap_or(f64::INFINITY)
-                        < worst.candidate_vs_base_ratio().unwrap_or(f64::INFINITY)
-                    {
-                        worst = comparison;
-                    }
-                }
-                println!(
-                    "{:<10} {:>5} {} {} {} {:<20} {:<20} {}",
-                    group.label(),
-                    group_comparisons.len(),
-                    paint(
-                        color,
-                        ratio_color(base_gmean, min_ratio),
-                        &format!("{base_gmean:>11.3}x"),
-                    ),
-                    paint(
-                        color,
-                        ratio_color(candidate_cpp_gmean, min_ratio),
-                        &format!("{candidate_cpp_gmean:>11.3}x"),
-                    ),
-                    paint(
-                        color,
-                        ratio_color(candidate_base_gmean, 1.0),
-                        &format!("{candidate_base_gmean:>11.3}x"),
-                    ),
-                    format!(
-                        "{} {:.2}x",
-                        best.rust_base.case_name,
-                        best.candidate_vs_base_ratio().unwrap_or(0.0)
-                    ),
-                    format!(
-                        "{} {:.2}x",
-                        worst.rust_base.case_name,
-                        worst.candidate_vs_base_ratio().unwrap_or(0.0)
-                    ),
-                    ratio_meter(candidate_base_gmean, color),
-                );
-            } else {
-                let base_wins = group_comparisons
+            let rust_wins = group_comparisons
+                .iter()
+                .filter(|comparison| comparison.rust_vs_cpp_ratio() >= 1.0)
+                .count();
+            let gmean = geometric_mean(
+                &group_comparisons
                     .iter()
-                    .filter(|comparison| comparison.base_vs_cpp_ratio() >= 1.0)
-                    .count();
-                let gmean = geometric_mean(
-                    &group_comparisons
-                        .iter()
-                        .map(|comparison| comparison.base_vs_cpp_ratio())
-                        .collect::<Vec<_>>(),
-                );
-                let mut best = group_comparisons[0];
-                let mut worst = group_comparisons[0];
-                for comparison in &group_comparisons {
-                    if comparison.base_vs_cpp_ratio() > best.base_vs_cpp_ratio() {
-                        best = comparison;
-                    }
-                    if comparison.base_vs_cpp_ratio() < worst.base_vs_cpp_ratio() {
-                        worst = comparison;
-                    }
+                    .map(|comparison| comparison.rust_vs_cpp_ratio())
+                    .collect::<Vec<_>>(),
+            );
+            let mut best = group_comparisons[0];
+            let mut worst = group_comparisons[0];
+            for comparison in &group_comparisons {
+                if comparison.rust_vs_cpp_ratio() > best.rust_vs_cpp_ratio() {
+                    best = comparison;
                 }
-                println!(
-                    "{:<10} {:>5} {:>4}/{:<4} {} {:<20} {:<20} {}",
-                    group.label(),
-                    group_comparisons.len(),
-                    base_wins,
-                    group_comparisons.len(),
-                    paint(
-                        color,
-                        ratio_color(gmean, min_ratio),
-                        &format!("{gmean:>12.3}x")
-                    ),
-                    format!(
-                        "{} {:.2}x",
-                        best.rust_base.case_name,
-                        best.base_vs_cpp_ratio()
-                    ),
-                    format!(
-                        "{} {:.2}x",
-                        worst.rust_base.case_name,
-                        worst.base_vs_cpp_ratio()
-                    ),
-                    ratio_meter(gmean, color),
-                );
+                if comparison.rust_vs_cpp_ratio() < worst.rust_vs_cpp_ratio() {
+                    worst = comparison;
+                }
             }
+            println!(
+                "{:<10} {:>5} {:>4}/{:<4} {} {:<20} {:<20} {}",
+                group.label(),
+                group_comparisons.len(),
+                rust_wins,
+                group_comparisons.len(),
+                paint(
+                    color,
+                    ratio_color(gmean, min_ratio),
+                    &format!("{gmean:>12.3}x")
+                ),
+                format!("{} {:.2}x", best.rust.case_name, best.rust_vs_cpp_ratio()),
+                format!("{} {:.2}x", worst.rust.case_name, worst.rust_vs_cpp_ratio()),
+                ratio_meter(gmean, color),
+            );
         }
     }
 
-    fn print_ranked_report(
-        comparisons: &[BenchComparison],
-        min_ratio: f64,
-        color: bool,
-        has_candidate: bool,
-    ) {
+    fn print_ranked_report(comparisons: &[BenchComparison], min_ratio: f64, color: bool) {
         let mut behind: Vec<_> = comparisons
             .iter()
-            .filter(|comparison| comparison.base_vs_cpp_ratio() < 1.0)
+            .filter(|comparison| comparison.rust_vs_cpp_ratio() < 1.0)
             .collect();
         behind.sort_by(|a, b| {
-            a.base_vs_cpp_ratio()
-                .partial_cmp(&b.base_vs_cpp_ratio())
+            a.rust_vs_cpp_ratio()
+                .partial_cmp(&b.rust_vs_cpp_ratio())
                 .unwrap_or(CmpOrdering::Equal)
         });
 
-        print_section("Rust-base Behind C++", color);
+        print_section("Rust Behind C++", color);
         if behind.is_empty() {
             println!("  none in this selection");
         } else {
             for comparison in behind.iter().take(5) {
-                let base_ratio = comparison.base_vs_cpp_ratio();
+                let rust_ratio = comparison.rust_vs_cpp_ratio();
                 let ratio = paint(
                     color,
-                    ratio_color(base_ratio, min_ratio),
-                    &format!("{base_ratio:.3}x"),
+                    ratio_color(rust_ratio, min_ratio),
+                    &format!("{rust_ratio:.3}x"),
                 );
                 println!(
                     "  {:<18} {:>11}  C++ faster by {:>6.1}%  {}",
-                    comparison.rust_base.case_name,
+                    comparison.rust.case_name,
                     ratio,
-                    (1.0 - base_ratio) * 100.0,
-                    paint(color, ANSI_DIM, comparison.rust_base.note),
+                    (1.0 - rust_ratio) * 100.0,
+                    paint(color, ANSI_DIM, comparison.rust.note),
                 );
             }
         }
 
         let mut ahead: Vec<_> = comparisons
             .iter()
-            .filter(|comparison| comparison.base_vs_cpp_ratio() >= 1.0)
+            .filter(|comparison| comparison.rust_vs_cpp_ratio() >= 1.0)
             .collect();
         ahead.sort_by(|a, b| {
-            b.base_vs_cpp_ratio()
-                .partial_cmp(&a.base_vs_cpp_ratio())
+            b.rust_vs_cpp_ratio()
+                .partial_cmp(&a.rust_vs_cpp_ratio())
                 .unwrap_or(CmpOrdering::Equal)
         });
 
-        print_section("Rust-base Ahead C++", color);
+        print_section("Rust Ahead C++", color);
         if ahead.is_empty() {
             println!("  none in this selection");
         } else {
             for comparison in ahead.iter().take(5) {
-                let base_ratio = comparison.base_vs_cpp_ratio();
-                let ratio = paint(color, ANSI_GREEN, &format!("{base_ratio:.3}x"));
+                let rust_ratio = comparison.rust_vs_cpp_ratio();
+                let ratio = paint(color, ANSI_GREEN, &format!("{rust_ratio:.3}x"));
                 println!(
                     "  {:<18} {:>11}  Rust faster by {:>6.1}%  {}",
-                    comparison.rust_base.case_name,
+                    comparison.rust.case_name,
                     ratio,
-                    (base_ratio - 1.0) * 100.0,
-                    paint(color, ANSI_DIM, comparison.rust_base.note),
-                );
-            }
-        }
-
-        if has_candidate {
-            print_candidate_delta_report(comparisons, color);
-        }
-    }
-
-    fn print_candidate_delta_report(comparisons: &[BenchComparison], color: bool) {
-        let mut slower: Vec<_> = comparisons
-            .iter()
-            .filter(|comparison| {
-                comparison
-                    .candidate_vs_base_ratio()
-                    .is_some_and(|ratio| ratio < 1.0)
-            })
-            .collect();
-        slower.sort_by(|a, b| {
-            a.candidate_vs_base_ratio()
-                .partial_cmp(&b.candidate_vs_base_ratio())
-                .unwrap_or(CmpOrdering::Equal)
-        });
-
-        print_section("Rust-candidate Lost To Base", color);
-        if slower.is_empty() {
-            println!("  none in this selection");
-        } else {
-            for comparison in slower.iter().take(5) {
-                let ratio = comparison.candidate_vs_base_ratio().unwrap_or(0.0);
-                println!(
-                    "  {:<18} {}  candidate slower by {:>6.1}%  {}",
-                    comparison.rust_base.case_name,
-                    paint(color, ratio_color(ratio, 1.0), &format!("{ratio:>7.3}x")),
-                    (1.0 - ratio) * 100.0,
-                    paint(color, ANSI_DIM, comparison.rust_base.note),
-                );
-            }
-        }
-
-        let mut faster: Vec<_> = comparisons
-            .iter()
-            .filter(|comparison| {
-                comparison
-                    .candidate_vs_base_ratio()
-                    .is_some_and(|ratio| ratio >= 1.0)
-            })
-            .collect();
-        faster.sort_by(|a, b| {
-            b.candidate_vs_base_ratio()
-                .partial_cmp(&a.candidate_vs_base_ratio())
-                .unwrap_or(CmpOrdering::Equal)
-        });
-
-        print_section("Rust-candidate Beat Base", color);
-        if faster.is_empty() {
-            println!("  none in this selection");
-        } else {
-            for comparison in faster.iter().take(5) {
-                let ratio = comparison.candidate_vs_base_ratio().unwrap_or(0.0);
-                println!(
-                    "  {:<18} {}  candidate faster by {:>6.1}%  {}",
-                    comparison.rust_base.case_name,
-                    paint(color, ANSI_GREEN, &format!("{ratio:>7.3}x")),
-                    (ratio - 1.0) * 100.0,
-                    paint(color, ANSI_DIM, comparison.rust_base.note),
+                    (rust_ratio - 1.0) * 100.0,
+                    paint(color, ANSI_DIM, comparison.rust.note),
                 );
             }
         }
@@ -1665,11 +1206,8 @@ mod windows_harness {
         let noisy: Vec<_> = comparisons
             .iter()
             .filter(|comparison| {
-                comparison.rust_base.coefficient_variation > 0.05
+                comparison.rust.coefficient_variation > 0.05
                     || comparison.cpp.coefficient_variation > 0.05
-                    || comparison
-                        .candidate()
-                        .is_some_and(|candidate| candidate.coefficient_variation > 0.05)
             })
             .collect();
         if noisy.is_empty() {
@@ -1677,22 +1215,12 @@ mod windows_harness {
         }
         print_section("High Variance", color);
         for comparison in noisy {
-            if let Some(candidate) = comparison.candidate() {
-                println!(
-                    "  {:<18} base cv {:>5.1}%   cand cv {:>5.1}%   cpp cv {:>5.1}%   repeat or raise budget before trusting small deltas",
-                    comparison.rust_base.case_name,
-                    comparison.rust_base.coefficient_variation * 100.0,
-                    candidate.coefficient_variation * 100.0,
-                    comparison.cpp.coefficient_variation * 100.0,
-                );
-            } else {
-                println!(
-                    "  {:<18} base cv {:>5.1}%   cpp cv {:>5.1}%   repeat or raise budget before trusting small deltas",
-                    comparison.rust_base.case_name,
-                    comparison.rust_base.coefficient_variation * 100.0,
-                    comparison.cpp.coefficient_variation * 100.0,
-                );
-            }
+            println!(
+                "  {:<18} rust cv {:>5.1}%   cpp cv {:>5.1}%   repeat or raise budget before trusting small deltas",
+                comparison.rust.case_name,
+                comparison.rust.coefficient_variation * 100.0,
+                comparison.cpp.coefficient_variation * 100.0,
+            );
         }
     }
 
@@ -1757,54 +1285,11 @@ mod windows_harness {
 
     fn print_tsv_compare(comparison: &BenchComparison, min_ratio: f64) {
         print_tsv_ratio(
-            "rust-base-vs-cpp",
-            &comparison.rust_base,
+            "rust-vs-cpp",
+            &comparison.rust,
             &comparison.cpp,
-            comparison.base_vs_cpp_ratio(),
+            comparison.rust_vs_cpp_ratio(),
             min_ratio,
-        );
-        if let Some(candidate) = comparison.candidate() {
-            print_tsv_ratio(
-                "rust-candidate-vs-cpp",
-                candidate,
-                &comparison.cpp,
-                comparison.candidate_vs_cpp_ratio().unwrap_or(0.0),
-                min_ratio,
-            );
-            print_tsv_ratio(
-                "rust-candidate-vs-base",
-                candidate,
-                &comparison.rust_base,
-                comparison.candidate_vs_base_ratio().unwrap_or(0.0),
-                1.0,
-            );
-        }
-    }
-
-    fn print_tsv_candidate_aggregate(
-        aggregate: Option<&CandidateAggregate>,
-        settings: BenchSettings<'_>,
-        target_ratio: f64,
-        min_scan_pct: f64,
-    ) {
-        let (status, ratio, cases) = match aggregate {
-            Some(aggregate) if target_ratio <= 0.0 || aggregate.ratio >= target_ratio => {
-                ("ok", aggregate.ratio, aggregate.cases)
-            },
-            Some(aggregate) => ("below-target", aggregate.ratio, aggregate.cases),
-            None => ("below-target", 0.0, 0),
-        };
-        println!(
-            "aggregate\t{}\trust-candidate-vs-base-non-hit-full-budget-gmean\tall\tfull-budget\t{}\t0\t{:.6}\t{}\t{}\t\t\t\t\t\t\t\t\t\t\tratio={:.3};target_ratio={:.3};cases={};scan_pct_min={:.6};lhs=rust-candidate;rhs=rust-base",
-            status,
-            settings.budget,
-            min_scan_pct,
-            settings.threads,
-            settings.repeat,
-            ratio,
-            target_ratio,
-            cases,
-            min_scan_pct,
         );
     }
 
@@ -1819,7 +1304,7 @@ mod windows_harness {
             "result-mismatch"
         } else if ratio >= target_ratio {
             "ok"
-        } else if relation == "rust-base-vs-cpp" {
+        } else if relation == "rust-vs-cpp" {
             "regression"
         } else {
             "below-target"

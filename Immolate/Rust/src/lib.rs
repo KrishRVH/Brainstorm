@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod bench_cases;
+pub mod engine;
 mod ffi;
 pub mod filters;
 pub mod instance;
@@ -8,11 +9,10 @@ pub mod item;
 pub mod rng;
 pub mod search;
 pub mod seed;
-pub mod v3;
 
+pub use engine::brainstorm_search_core;
 pub use filters::{FilterConfig, JokerLocation};
 pub use search::{resolve_seed_budget, resolve_threads};
-pub use v3::brainstorm_search_core_v3 as brainstorm_search_core;
 
 #[cfg(test)]
 mod tests {
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn current_core_handles_composite_benchmark_cases() {
-        use crate::v3::config::{CompiledFilter, KernelShape};
+        use crate::engine::config::{CompiledFilter, KernelShape};
 
         let cases = [
             (
@@ -347,7 +347,7 @@ mod tests {
             assert_eq!(
                 CompiledFilter::compile(&cfg).shape,
                 KernelShape::Composite,
-                "{name} should use composite V3 kernel",
+                "{name} should use composite engine kernel",
             );
             let _ = brainstorm_search_core("", &cfg, budget, 1);
         }
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn current_core_rejects_static_no_match_filters() {
-        use crate::v3::config::{CompiledFilter, KernelShape};
+        use crate::engine::config::{CompiledFilter, KernelShape};
 
         let cases = [
             (

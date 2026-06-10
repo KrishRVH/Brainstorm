@@ -8,9 +8,8 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 
 ## Project Structure & Module Organization
 - Lua entry/UI: `Brainstorm.lua`, `UI.lua`; config/compat in `config.lua`, `lovely.toml`, `nativefs.lua`, `steamodded_compat.lua`.
-- Native sources: `Immolate/Rust/` is the only Rust DLL implementation. `Immolate/*.cpp` and `Immolate/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/brainstorm.cpp`).
+- Native sources: `Immolate/Rust/` is the only Rust DLL implementation. `Immolate/CPP/*.cpp` and `Immolate/CPP/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/CPP/brainstorm.cpp`).
 - Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use `mise.toml`. The C++ oracle artifact is kept under `target/cpp/`, and the current Rust artifact is kept under `target/rust/`.
-- Rust candidate iteration is artifact-based: keep the in-repo Rust implementation singular, and compare future experimental DLLs with `RUST_CANDIDATE_DLL=/path/to/Immolate.dll`.
 - `BalatroSource/` is the literal game source; never commit it to git and always use it as the source of truth for understanding game behavior.
 - `BalatroSource_Guide.md` summarizes seed/search-relevant mechanics verified from `BalatroSource/`.
 - Logging is currently disabled in Lua/C++ and the Rust `immolate_set_log_path` export is a no-op; keep it off unless explicitly re-enabled.
@@ -27,6 +26,7 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 - Pretty full-suite dashboard: `mise run bench-pretty`.
 - Deploy: `TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm mise run deploy`.
 - Release: `mise run release` (builds the DLL and zips `release/Brainstorm_v3.1.zip`).
+- Dev release workflow: `.github/workflows/dev-release.yml` publishes/updates the `dev-release` prerelease on `master` pushes and manual dispatch.
 - Formatting: `mise run format` (runs stylua/clang-format/rustfmt when available).
 - Lint: `mise run lint` (stylua/clang-format/rustfmt/clippy checks).
 - Clean: `mise run clean`.

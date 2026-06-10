@@ -61,7 +61,7 @@ then use `mise run <task>`.
 
 `mise run build` builds the current Rust native DLL and writes `Immolate.dll`.
 There is one Rust implementation now. `mise run build-cpp` still builds the C++
-oracle for parity checks, but the game uses the Rust DLL.
+oracle from `Immolate/CPP/` for parity checks, but the game uses the Rust DLL.
 
 `mise run check-rust` runs Rust formatting, clippy, unit tests, DLL
 export/import validation, C++ vs Rust parity, and a benchmark regression smoke.
@@ -78,11 +78,14 @@ Actual Lua UI UX benchmark gate:
 mise run bench-ux
 ```
 
-See `Immolate/Rust/BENCH.md` for benchmark workflows, including future
-candidate DLL comparison through `RUST_CANDIDATE_DLL`.
+See `Immolate/Rust/BENCH.md` for benchmark workflows.
 
 **Release packaging:** `mise run release` (runs `mise run check-rust`, then
 creates `release/Brainstorm_v3.1.zip`).
+
+**Development release:** `.github/workflows/dev-release.yml` runs on pushes to
+`master` and can also be triggered manually. It rebuilds the release zip and
+updates the prerelease titled `dev release` at tag `dev-release`.
 
 ## Documentation
 - `AGENTS.md`: contributor and agent-facing project rules.
@@ -90,8 +93,7 @@ creates `release/Brainstorm_v3.1.zip`).
   search parity and future mod work.
 - `Immolate/Rust/PLAN.md`: current Rust DLL architecture, FFI contract, and
   maintenance invariants.
-- `Immolate/Rust/BENCH.md`: benchmark harness, gates, fixture groups, and
-  candidate DLL workflow.
+- `Immolate/Rust/BENCH.md`: benchmark harness, gates, and fixture groups.
 
 ## Installation (no build)
 Download the v3.1 release zip from

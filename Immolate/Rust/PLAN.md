@@ -14,14 +14,11 @@ For benchmark operation details, use `Immolate/Rust/BENCH.md`.
 - `mise run build` and `mise run build-rust` build the Rust DLL and copy it to the repo
   root as `Immolate.dll`.
 - `mise run build-cpp` builds the C++ oracle to `target/cpp/Immolate.dll`.
+- C++ oracle source lives under `Immolate/CPP/`; Rust source lives under
+  `Immolate/Rust/`.
 - There are no older Rust build features, mise tasks, or source modules.
-- Future Rust experiments are compared as external DLL artifacts through
-  `RUST_CANDIDATE_DLL=/path/to/Immolate.dll`; they are not built from in-repo
-  feature flags.
-- `mise run compare` validates C++ vs current Rust through the Windows ABI under
-  Wine.
-- `mise run bench-compare` benchmarks C++ vs current Rust, and optionally a future
-  candidate DLL, through the same ABI harness.
+- `mise run compare` validates C++ vs Rust through the Windows ABI under Wine.
+- `mise run bench-compare` benchmarks C++ vs Rust through the same ABI harness.
 - Benchmark comparison fails on result mismatch. A faster wrong seed is a
   failure.
 
@@ -68,6 +65,8 @@ FFI rules:
 
 ## Source Layout
 
+- `Immolate/CPP/`: C++ oracle source, including `brainstorm.cpp` as the DLL
+  entry implementation for oracle builds.
 - `Immolate/Rust/src/ffi.rs`: C ABI boundary and string/result ownership.
 - `Immolate/Rust/src/lib.rs`: public Rust API and unit tests.
 - `Immolate/Rust/src/filters.rs`: raw UI/FFI filter parsing into `FilterConfig`.
@@ -75,16 +74,16 @@ FFI rules:
 - `Immolate/Rust/src/rng.rs`: bit-compatible Lua/Balatro RNG primitives.
 - `Immolate/Rust/src/seed.rs`: seed space and seed ordering.
 - `Immolate/Rust/src/search.rs`: shared budget/thread helpers.
-- `Immolate/Rust/src/v3/`: current optimized search implementation.
+- `Immolate/Rust/src/engine/`: optimized search implementation.
 - `Immolate/Rust/src/bench_cases.rs`: shared benchmark fixture catalog.
 - `Immolate/Rust/src/bin/immolate_dll_harness.rs`: Windows ABI comparison and
   benchmark harness.
 - `Immolate/Rust/src/bin/brainstorm_bench.rs`: native Rust-only profiling
   helper.
 
-The older generic Rust search code is not the exported implementation. The
-public Rust entry point is `immolate::brainstorm_search_core`, which re-exports
-the current optimized core.
+The public Rust entry point is `immolate::brainstorm_search_core`. The engine
+uses specialized kernels where possible and a generic correctness fallback for
+unsupported filter combinations.
 
 ## Search Architecture
 
@@ -106,7 +105,7 @@ with a `KernelShape`. Shapes include:
 - `Composite`
 - `Generic`
 
-Dedicated kernels live in `v3/kernels.rs`. `Composite` handles real UI
+Dedicated kernels live in `engine/kernels.rs`. `Composite` handles real UI
 combinations such as tag+voucher+pack, voucher+pack, tag+joker, Souls+pack, and
 Erratic+tag without falling all the way back to the old generic instance path.
 `Generic` remains as a correctness fallback for unsupported combinations.
@@ -167,45 +166,29 @@ Pretty full-suite dashboard:
 mise run bench-pretty
 ```
 
-## Future Candidate Workflow
+## Latest Local Validation State
 
-Keep the in-repo Rust implementation singular. To test another Rust candidate:
+The latest post-structure-change validation passed:
 
-1. Build the current repo with `mise run build-rust`.
-2. Build or copy the candidate DLL to a separate path.
-3. Validate behavior:
+- `cargo fmt --manifest-path Immolate/Rust/Cargo.toml --check`
+- `cargo check --manifest-path Immolate/Rust/Cargo.toml --all-targets --target x86_64-pc-windows-gnu`
+- `cargo test --manifest-path Immolate/Rust/Cargo.toml`
+- `cargo clippy --manifest-path Immolate/Rust/Cargo.toml --all-targets -- -D warnings`
+- `mise run build-cpp`
+- `mise run build-rust`
+- `mise run build-harness`
+- direct `immolate_dll_harness.exe compare --cpp ... --rust ... --threads 1`
+- `mise run check-rust-dll`
 
-```bash
-RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll mise run compare
-```
-
-4. Benchmark the candidate:
-
-```bash
-RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll mise run bench-pretty
-```
-
-Run an A/A benchmark first by pointing `RUST_CANDIDATE_DLL` at
-`target/rust/Immolate.dll`; use that to understand local noise before claiming
-small wins.
-
-## Latest Local Performance State
-
-The latest documented local validation passed:
-
-- `mise run check-rust`
-- `mise run bench-full`
-- `mise run bench-ux`
-
-Those gates enforce C++/Rust result parity and fail if Rust drops below the
-configured C++ throughput threshold. In that local pass, the weakest observed
-full-suite ratio was `1.124x` on `ux-tag-voucher-pack`; the weakest observed UX
-ratio was `1.611x` on `ux-voucher-pack`. Treat these as environment-specific
-measurements; the gate commands are the durable release criteria.
+The direct harness comparison enforces C++/Rust result parity. Full performance
+gates remain `mise run bench-full` and `mise run bench-ux`; run them before
+claiming benchmark state for a release.
 
 ## Release Notes For Maintainers
 
 - Release and deploy consume the top-level `Immolate.dll`.
+- Dev prereleases are managed by `.github/workflows/dev-release.yml` at tag
+  `dev-release` with release title `dev release`.
 - Do not commit `release/` artifacts.
 - Note `Immolate.dll` in PRs whenever it changes.
 - Keep `BalatroSource/` out of git; use it only as the local source of truth for
