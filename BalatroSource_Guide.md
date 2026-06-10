@@ -818,7 +818,7 @@ Primary sources: all files listed above.
 
 ## Native Model Boundaries
 
-- Current C++ and Rust are the compatibility oracle for Brainstorm's shipped DLL
+- The Rust native search is the implementation for Brainstorm's shipped DLL
   behavior. `BalatroSource/` is the source of truth for game mechanics, but some
   native simplifications are intentional or historical.
 - Existing native search operates at family level for booster packs, ignores
@@ -830,12 +830,12 @@ Primary sources: all files listed above.
   `observatory` filter is a search shortcut for "ante-1 Telescope voucher plus
   a Mega Celestial pack available", not a simulation of the Observatory voucher
   itself. Sources: `card.lua` (`Card:open`); `functions/state_events.lua`
-  (`G.FUNCS.evaluate_play`); current native implementations.
+  (`G.FUNCS.evaluate_play`); current Rust implementation.
 - Perkeo's own Joker effect later copies a random consumable using the `perkeo`
   RNG key. Immolate's Perkeo search only needs the Soul-to-legendary path that
   yields Perkeo; it does not need to simulate Perkeo's later copying effect.
   Sources: `card.lua` (`Card:use_consumeable`, `Card:calculate_joker`);
-  current native implementations.
-- Future optimized native implementations should preserve C++ behavior by
-  default, and only switch to source-correct expanded behavior behind explicit
-  tests and UI contract changes.
+  current Rust implementation.
+- Future optimized native implementations should preserve the current shipped
+  Rust behavior by default, and only switch to source-correct expanded behavior
+  behind explicit tests and UI contract changes.

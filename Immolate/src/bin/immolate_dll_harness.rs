@@ -54,6 +54,15 @@ mod windows_harness {
         c_longlong,
         c_int,
     ) -> *const c_char;
+    type OriginalBrainstorm = unsafe extern "C" fn(
+        *const c_char,
+        *const c_char,
+        *const c_char,
+        *const c_char,
+        c_double,
+        bool,
+        bool,
+    ) -> *const c_char;
     type FreeResult = unsafe extern "C" fn(*const c_char);
 
     #[link(name = "kernel32")]
@@ -61,7 +70,38 @@ mod windows_harness {
         fn LoadLibraryW(path: *const u16) -> HModule;
         fn GetProcAddress(module: HModule, name: *const c_char) -> FarProc;
         fn FreeLibrary(module: HModule) -> i32;
+        fn GetStdHandle(n_std_handle: u32) -> HModule;
+        fn SetStdHandle(n_std_handle: u32, handle: HModule) -> i32;
+        fn CreateFileW(
+            file_name: *const u16,
+            desired_access: u32,
+            share_mode: u32,
+            security_attributes: *mut c_void,
+            creation_disposition: u32,
+            flags_and_attributes: u32,
+            template_file: HModule,
+        ) -> HModule;
+        fn CloseHandle(handle: HModule) -> i32;
     }
+
+    #[link(name = "msvcrt")]
+    unsafe extern "C" {
+        fn _dup(fd: c_int) -> c_int;
+        fn _dup2(fd1: c_int, fd2: c_int) -> c_int;
+        fn _close(fd: c_int) -> c_int;
+        fn _open_osfhandle(os_file_handle: isize, flags: c_int) -> c_int;
+        fn fflush(stream: *mut c_void) -> c_int;
+    }
+
+    const STD_OUTPUT_HANDLE: u32 = -11_i32 as u32;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const OPEN_EXISTING: u32 = 3;
+    const FILE_ATTRIBUTE_NORMAL: u32 = 0x0000_0080;
+    const INVALID_HANDLE_VALUE: HModule = !0_usize as HModule;
+    const STDOUT_FILENO: c_int = 1;
+    const O_WRONLY: c_int = 0x0001;
 
     #[derive(Clone)]
     struct Case {
@@ -90,12 +130,21 @@ mod windows_harness {
 
     struct Dll {
         handle: HModule,
-        search: BrainstormSearch,
+        entry: DllEntry,
         free_result: FreeResult,
+    }
+
+    enum DllEntry {
+        Current(BrainstormSearch),
+        Original(OriginalBrainstorm),
     }
 
     impl Dll {
         fn load(path: &str) -> Result<Self, String> {
+            Self::load_current(path)
+        }
+
+        fn load_current(path: &str) -> Result<Self, String> {
             let mut wide: Vec<u16> = OsStr::new(path).encode_wide().collect();
             wide.push(0);
             let handle = unsafe { LoadLibraryW(wide.as_ptr()) };
@@ -118,12 +167,56 @@ mod windows_harness {
 
             Ok(Self {
                 handle,
-                search: unsafe { std::mem::transmute::<FarProc, BrainstormSearch>(search_ptr) },
+                entry: DllEntry::Current(unsafe {
+                    std::mem::transmute::<FarProc, BrainstormSearch>(search_ptr)
+                }),
                 free_result: unsafe { std::mem::transmute::<FarProc, FreeResult>(free_ptr) },
             })
         }
 
         fn run(&self, case: &Case) -> Result<Option<String>, String> {
+            match self.entry {
+                DllEntry::Current(search) => self.run_current(case, search),
+                DllEntry::Original(search) => self.run_original(case, search),
+            }
+        }
+
+        fn load_original(path: &str) -> Result<Self, String> {
+            let mut wide: Vec<u16> = OsStr::new(path).encode_wide().collect();
+            wide.push(0);
+            let _silencer = StdoutSilencer::start();
+            let handle = unsafe { LoadLibraryW(wide.as_ptr()) };
+            if handle.is_null() {
+                return Err(format!("failed to load original DLL: {path}"));
+            }
+
+            let search_name = CString::new("brainstorm").map_err(|err| format!("{err}"))?;
+            let free_name = CString::new("free_result").map_err(|err| format!("{err}"))?;
+            let search_ptr = unsafe { GetProcAddress(handle, search_name.as_ptr()) };
+            let free_ptr = unsafe { GetProcAddress(handle, free_name.as_ptr()) };
+            if search_ptr.is_null() || free_ptr.is_null() {
+                unsafe {
+                    FreeLibrary(handle);
+                }
+                return Err(format!(
+                    "missing required exports in {path}: brainstorm/free_result",
+                ));
+            }
+
+            Ok(Self {
+                handle,
+                entry: DllEntry::Original(unsafe {
+                    std::mem::transmute::<FarProc, OriginalBrainstorm>(search_ptr)
+                }),
+                free_result: unsafe { std::mem::transmute::<FarProc, FreeResult>(free_ptr) },
+            })
+        }
+
+        fn run_current(
+            &self,
+            case: &Case,
+            search: BrainstormSearch,
+        ) -> Result<Option<String>, String> {
             let seed_start = CArg::new(case.seed_start)?;
             let voucher = CArg::new(case.voucher)?;
             let pack = CArg::new(case.pack)?;
@@ -134,7 +227,7 @@ mod windows_harness {
             let deck = CArg::new(case.deck)?;
 
             let result = unsafe {
-                (self.search)(
+                (search)(
                     seed_start.as_ptr(),
                     voucher.as_ptr(),
                     pack.as_ptr(),
@@ -164,6 +257,145 @@ mod windows_harness {
                 (self.free_result)(result);
             }
             Ok(Some(out))
+        }
+
+        fn run_original(
+            &self,
+            case: &Case,
+            search: OriginalBrainstorm,
+        ) -> Result<Option<String>, String> {
+            let seed_start = CArg::new(Some(case.seed_start.unwrap_or("")))?;
+            let voucher = CArg::new(Some(original_voucher_name(case.voucher.unwrap_or(""))?))?;
+            let pack = CArg::new(Some(original_pack_name(case.pack.unwrap_or(""))?))?;
+            let tag = CArg::new(Some(original_tag_name(case.tag1.unwrap_or(""))?))?;
+
+            let _silencer = StdoutSilencer::start();
+            let result = unsafe {
+                (search)(
+                    seed_start.as_ptr(),
+                    voucher.as_ptr(),
+                    pack.as_ptr(),
+                    tag.as_ptr(),
+                    case.souls,
+                    case.observatory,
+                    case.perkeo,
+                )
+            };
+            if result.is_null() {
+                return Ok(None);
+            }
+            let out = unsafe { CStr::from_ptr(result) }
+                .to_string_lossy()
+                .into_owned();
+            unsafe {
+                (self.free_result)(result);
+            }
+            Ok(Some(out))
+        }
+    }
+
+    struct StdoutSilencer {
+        previous_handle: HModule,
+        previous_fd: c_int,
+        nul_fd: c_int,
+        active: bool,
+    }
+
+    impl StdoutSilencer {
+        fn start() -> Self {
+            unsafe {
+                fflush(ptr::null_mut());
+            }
+            let mut nul_path: Vec<u16> = OsStr::new("NUL").encode_wide().collect();
+            nul_path.push(0);
+            let previous_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+            let previous_fd = unsafe { _dup(STDOUT_FILENO) };
+            if previous_fd < 0 {
+                return Self {
+                    previous_handle,
+                    previous_fd,
+                    nul_fd: -1,
+                    active: false,
+                };
+            }
+
+            let nul = unsafe {
+                CreateFileW(
+                    nul_path.as_ptr(),
+                    GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    ptr::null_mut(),
+                    OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL,
+                    ptr::null_mut(),
+                )
+            };
+            if nul.is_null() || nul == INVALID_HANDLE_VALUE {
+                unsafe {
+                    _close(previous_fd);
+                }
+                return Self {
+                    previous_handle,
+                    previous_fd: -1,
+                    nul_fd: -1,
+                    active: false,
+                };
+            }
+
+            let nul_fd = unsafe { _open_osfhandle(nul as isize, O_WRONLY) };
+            if nul_fd < 0 {
+                unsafe {
+                    CloseHandle(nul);
+                    _close(previous_fd);
+                }
+                return Self {
+                    previous_handle,
+                    previous_fd: -1,
+                    nul_fd: -1,
+                    active: false,
+                };
+            }
+
+            let active = unsafe {
+                let redirected = _dup2(nul_fd, STDOUT_FILENO) == 0;
+                SetStdHandle(STD_OUTPUT_HANDLE, nul) != 0 && redirected
+            };
+            if !active {
+                unsafe {
+                    _dup2(previous_fd, STDOUT_FILENO);
+                    _close(previous_fd);
+                    _close(nul_fd);
+                }
+                return Self {
+                    previous_handle,
+                    previous_fd: -1,
+                    nul_fd: -1,
+                    active: false,
+                };
+            }
+
+            Self {
+                previous_handle,
+                previous_fd,
+                nul_fd,
+                active,
+            }
+        }
+    }
+
+    impl Drop for StdoutSilencer {
+        fn drop(&mut self) {
+            if self.active {
+                unsafe {
+                    fflush(ptr::null_mut());
+                    _dup2(self.previous_fd, STDOUT_FILENO);
+                    _close(self.previous_fd);
+                    SetStdHandle(STD_OUTPUT_HANDLE, self.previous_handle);
+                    _close(self.nul_fd);
+                }
+                self.previous_fd = -1;
+                self.nul_fd = -1;
+            }
         }
     }
 
@@ -249,11 +481,6 @@ mod windows_harness {
     }
 
     enum Command {
-        Compare {
-            cpp: String,
-            rust: String,
-            threads: i32,
-        },
         Bench {
             dll: String,
             case: String,
@@ -264,8 +491,8 @@ mod windows_harness {
             output: OutputOptions,
         },
         BenchCompare {
-            cpp: String,
             rust: String,
+            original: String,
             case: String,
             budget: i64,
             threads: i32,
@@ -278,12 +505,6 @@ mod windows_harness {
 
     pub fn main() {
         match parse_command(env::args().skip(1).collect()) {
-            Ok(Command::Compare { cpp, rust, threads }) => {
-                if let Err(err) = compare(&cpp, &rust, threads) {
-                    eprintln!("{err}");
-                    std::process::exit(1);
-                }
-            },
             Ok(Command::Bench {
                 dll,
                 case,
@@ -307,8 +528,8 @@ mod windows_harness {
                 }
             },
             Ok(Command::BenchCompare {
-                cpp,
                 rust,
+                original,
                 case,
                 budget,
                 threads,
@@ -325,7 +546,7 @@ mod windows_harness {
                     warmup,
                     output,
                 };
-                if let Err(err) = bench_compare(&cpp, &rust, settings, min_ratio) {
+                if let Err(err) = bench_compare(&rust, &original, settings, min_ratio) {
                     eprintln!("{err}");
                     std::process::exit(1);
                 }
@@ -333,50 +554,10 @@ mod windows_harness {
             Err(err) => {
                 eprintln!("{err}");
                 eprintln!(
-                    "usage:\n  immolate_dll_harness compare --cpp PATH --rust PATH [--threads N]\n  immolate_dll_harness bench --dll PATH [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N] [--format pretty|tsv] [--color auto|always|never]\n  immolate_dll_harness bench-compare --cpp PATH --rust PATH [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N] [--min-ratio N] [--format pretty|tsv] [--color auto|always|never]"
+                    "usage:\n  immolate_dll_harness bench --dll PATH [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N] [--format pretty|tsv] [--color auto|always|never]\n  immolate_dll_harness bench-compare --rust PATH --original PATH [--case all|GROUP|NAME] [--budget N] [--threads N] [--repeat N] [--warmup N] [--min-ratio N] [--format pretty|tsv] [--color auto|always|never]"
                 );
                 std::process::exit(2);
             },
-        }
-    }
-
-    fn compare(cpp_path: &str, rust_path: &str, threads: i32) -> Result<(), String> {
-        let cpp = Dll::load(cpp_path)?;
-        let rust = Dll::load(rust_path)?;
-        let mut failed = false;
-        println!("status\tcase\tcpp\trust");
-        for mut case in compare_cases() {
-            if threads != 1 {
-                case.threads = threads;
-            }
-            let cpp_result = cpp.run(&case)?;
-            let rust_result = rust.run(&case)?;
-            let status = if cpp_result == rust_result {
-                "ok"
-            } else {
-                failed = true;
-                "mismatch"
-            };
-            println!(
-                "{status}\t{}\t{}\t{}",
-                case.name,
-                display_result(cpp_result.as_deref()),
-                display_result(rust_result.as_deref()),
-            );
-        }
-        for (name, dll) in [("cpp", &cpp), ("rust", &rust)] {
-            let stress = repeated_alloc_free(dll, 100)?;
-            if stress {
-                println!("ok\talloc_free_stress_100_{name}\t1\t1");
-            } else {
-                failed = true;
-                println!("mismatch\talloc_free_stress_100_{name}\t1\t<null>");
-            }
-        }
-        if failed {
-            Err("DLL compare failed".to_owned())
-        } else {
-            Ok(())
         }
     }
 
@@ -415,8 +596,8 @@ mod windows_harness {
     }
 
     fn bench_compare(
-        cpp_path: &str,
         rust_path: &str,
+        original_path: &str,
         settings: BenchSettings<'_>,
         min_ratio: f64,
     ) -> Result<(), String> {
@@ -426,18 +607,18 @@ mod windows_harness {
         if settings.repeat == 0 {
             return Err("--repeat must be positive".to_owned());
         }
-        if min_ratio <= 0.0 {
-            return Err("--min-ratio must be positive".to_owned());
+        if min_ratio < 0.0 {
+            return Err("--min-ratio cannot be negative".to_owned());
         }
-        let cpp = Dll::load(cpp_path)?;
         let rust = Dll::load(rust_path)?;
+        let original = Dll::load_original(original_path)?;
         let cases =
             selected_bench_cases(settings.selected_case, settings.budget, settings.threads)?;
         if settings.output.format == OutputFormat::Tsv {
             print_tsv_header();
         } else {
             print_run_header(
-                "Brainstorm DLL Benchmark: C++ vs Rust",
+                "Brainstorm DLL Benchmark: Rust vs Original",
                 settings,
                 cases.len(),
             );
@@ -446,14 +627,6 @@ mod windows_harness {
         let mut failed = false;
         let mut comparisons = Vec::with_capacity(cases.len());
         for case in &cases {
-            let cpp_summary = measure_bench_case(
-                &cpp,
-                case,
-                settings.repeat,
-                settings.warmup,
-                "cpp",
-                settings.output,
-            )?;
             let rust_summary = measure_bench_case(
                 &rust,
                 case,
@@ -462,11 +635,30 @@ mod windows_harness {
                 "rust",
                 settings.output,
             )?;
-            let comparison = BenchComparison {
-                cpp: cpp_summary,
-                rust: rust_summary,
+            let (original_summary, original_skip) = match original_skip_reason(case) {
+                Some(reason) => (None, Some(reason)),
+                None => (
+                    Some(measure_bench_case(
+                        &original,
+                        case,
+                        settings.repeat,
+                        settings.warmup,
+                        "original",
+                        settings.output,
+                    )?),
+                    None,
+                ),
             };
-            if !comparison.rust_matches_cpp() || comparison.rust_vs_cpp_ratio() < min_ratio {
+            let comparison = BenchComparison {
+                rust: rust_summary,
+                original: original_summary,
+                original_skip,
+            };
+            if min_ratio > 0.0
+                && comparison
+                    .rust_vs_original_ratio()
+                    .is_some_and(|ratio| ratio < min_ratio)
+            {
                 failed = true;
             }
             if settings.output.format == OutputFormat::Tsv {
@@ -478,7 +670,7 @@ mod windows_harness {
             print_compare_report(&comparisons, min_ratio, settings.output);
         }
         if failed {
-            Err("benchmark regression threshold failed".to_owned())
+            Err("benchmark threshold failed".to_owned())
         } else {
             Ok(())
         }
@@ -519,17 +711,16 @@ mod windows_harness {
     }
 
     struct BenchComparison {
-        cpp: BenchSummary,
         rust: BenchSummary,
+        original: Option<BenchSummary>,
+        original_skip: Option<&'static str>,
     }
 
     impl BenchComparison {
-        fn rust_vs_cpp_ratio(&self) -> f64 {
-            self.rust.seeds_per_sec / self.cpp.seeds_per_sec
-        }
-
-        fn rust_matches_cpp(&self) -> bool {
-            self.rust.result == self.cpp.result
+        fn rust_vs_original_ratio(&self) -> Option<f64> {
+            self.original.as_ref().map(|original| {
+                original.mean_elapsed.as_secs_f64() / self.rust.mean_elapsed.as_secs_f64()
+            })
         }
     }
 
@@ -557,7 +748,11 @@ mod windows_harness {
             let elapsed = started.elapsed();
             ticker.finish();
             let result = result?;
-            let scanned = scanned_count(case, result.as_deref());
+            let scanned = if implementation == "original" {
+                case.num_seeds
+            } else {
+                scanned_count(case, result.as_deref())
+            };
             let elapsed_secs = elapsed.as_secs_f64();
             let seeds_per_sec = scanned as f64 / elapsed_secs;
             let ns_per_seed = elapsed_secs * 1_000_000_000.0 / scanned as f64;
@@ -653,31 +848,6 @@ mod windows_harness {
             return Err("missing command".to_owned());
         };
         match mode.as_str() {
-            "compare" => {
-                let mut cpp = None;
-                let mut rust = None;
-                let mut threads = 1;
-                parse_flags(&args[1..], |flag, value| match flag {
-                    "--cpp" => {
-                        cpp = Some(value.to_owned());
-                        Ok(())
-                    },
-                    "--rust" => {
-                        rust = Some(value.to_owned());
-                        Ok(())
-                    },
-                    "--threads" => {
-                        threads = parse_value(value, "--threads")?;
-                        Ok(())
-                    },
-                    _ => Err(format!("unknown compare flag: {flag}")),
-                })?;
-                Ok(Command::Compare {
-                    cpp: cpp.ok_or_else(|| "missing --cpp".to_owned())?,
-                    rust: rust.ok_or_else(|| "missing --rust".to_owned())?,
-                    threads,
-                })
-            },
             "bench" => {
                 let mut dll = None;
                 let mut case = "all".to_owned();
@@ -732,8 +902,8 @@ mod windows_harness {
                 })
             },
             "bench-compare" => {
-                let mut cpp = None;
                 let mut rust = None;
+                let mut original = None;
                 let mut case = "all".to_owned();
                 let mut budget = 1_000_000;
                 let mut threads = 1;
@@ -742,12 +912,12 @@ mod windows_harness {
                 let mut min_ratio = 0.8;
                 let mut output = OutputOptions::default();
                 parse_flags(&args[1..], |flag, value| match flag {
-                    "--cpp" => {
-                        cpp = Some(value.to_owned());
-                        Ok(())
-                    },
                     "--rust" => {
                         rust = Some(value.to_owned());
+                        Ok(())
+                    },
+                    "--original" => {
+                        original = Some(value.to_owned());
                         Ok(())
                     },
                     "--case" => {
@@ -785,8 +955,8 @@ mod windows_harness {
                     _ => Err(format!("unknown bench-compare flag: {flag}")),
                 })?;
                 Ok(Command::BenchCompare {
-                    cpp: cpp.ok_or_else(|| "missing --cpp".to_owned())?,
                     rust: rust.ok_or_else(|| "missing --rust".to_owned())?,
+                    original: original.ok_or_else(|| "missing --original".to_owned())?,
                     case,
                     budget,
                     threads,
@@ -854,7 +1024,139 @@ mod windows_harness {
             return 1;
         }
         let start = case.seed_start.unwrap_or("");
-        (Seed::from_str(result).id() - Seed::from_str(start).id() + 1).clamp(1, case.num_seeds)
+        (Seed::from_str(result).id() - Seed::from_str(start).id() + 1).max(1)
+    }
+
+    fn original_skip_reason(case: &Case) -> Option<&'static str> {
+        if case.shape == BenchShape::Miss {
+            return Some("legacy DLL has a fixed 100M scan cap, so miss cases are unbounded");
+        }
+        if !case.tag2.unwrap_or("").is_empty() {
+            return Some("legacy DLL supports only one tag filter");
+        }
+        if !case.joker.unwrap_or("").is_empty() {
+            return Some("legacy DLL has no joker filter");
+        }
+        if !matches!(case.deck.unwrap_or(""), "" | "b_red") {
+            return Some("legacy DLL has no deck filter");
+        }
+        if case.erratic
+            || case.no_faces
+            || case.min_face_cards != 0
+            || case.suit_ratio.abs() > f64::EPSILON
+        {
+            return Some("legacy DLL has no Erratic Deck filters");
+        }
+        if original_voucher_name(case.voucher.unwrap_or("")).is_err()
+            || original_pack_name(case.pack.unwrap_or("")).is_err()
+            || original_tag_name(case.tag1.unwrap_or("")).is_err()
+        {
+            return Some("legacy DLL does not recognize one of this case's filters");
+        }
+        None
+    }
+
+    fn original_voucher_name(key: &str) -> Result<&'static str, String> {
+        match key {
+            "" => Ok(""),
+            "v_overstock_norm" => Ok("Overstock"),
+            "v_overstock_plus" => Ok("Overstock Plus"),
+            "v_clearance_sale" => Ok("Clearance Sale"),
+            "v_liquidation" => Ok("Liquidation"),
+            "v_hone" => Ok("Hone"),
+            "v_glow_up" => Ok("Glow Up"),
+            "v_reroll_surplus" => Ok("Reroll Surplus"),
+            "v_reroll_glut" => Ok("Reroll Glut"),
+            "v_crystal_ball" => Ok("Crystal Ball"),
+            "v_omen_globe" => Ok("Omen Globe"),
+            "v_telescope" => Ok("Telescope"),
+            "v_observatory" => Ok("Observatory"),
+            "v_grabber" => Ok("Grabber"),
+            "v_nacho_tong" => Ok("Nacho Tong"),
+            "v_wasteful" => Ok("Wasteful"),
+            "v_recyclomancy" => Ok("Recyclomancy"),
+            "v_tarot_merchant" => Ok("Tarot Merchant"),
+            "v_tarot_tycoon" => Ok("Tarot Tycoon"),
+            "v_planet_merchant" => Ok("Planet Merchant"),
+            "v_planet_tycoon" => Ok("Planet Tycoon"),
+            "v_seed_money" => Ok("Seed Money"),
+            "v_money_tree" => Ok("Money Tree"),
+            "v_blank" => Ok("Blank"),
+            "v_antimatter" => Ok("Antimatter"),
+            "v_magic_trick" => Ok("Magic Trick"),
+            "v_illusion" => Ok("Illusion"),
+            "v_hieroglyph" => Ok("Hieroglyph"),
+            "v_petroglyph" => Ok("Petroglyph"),
+            "v_directors_cut" => Ok("Director's Cut"),
+            "v_retcon" => Ok("Retcon"),
+            "v_paint_brush" => Ok("Paint Brush"),
+            "v_palette" => Ok("Palette"),
+            _ => Err(format!("unsupported original voucher key: {key}")),
+        }
+    }
+
+    fn original_pack_name(key: &str) -> Result<&'static str, String> {
+        match normalize_original_pack_key(key).as_str() {
+            "" => Ok(""),
+            "p_arcana_normal" => Ok("Arcana Pack"),
+            "p_arcana_jumbo" => Ok("Jumbo Arcana Pack"),
+            "p_arcana_mega" => Ok("Mega Arcana Pack"),
+            "p_celestial_normal" => Ok("Celestial Pack"),
+            "p_celestial_jumbo" => Ok("Jumbo Celestial Pack"),
+            "p_celestial_mega" => Ok("Mega Celestial Pack"),
+            "p_standard_normal" => Ok("Standard Pack"),
+            "p_standard_jumbo" => Ok("Jumbo Standard Pack"),
+            "p_standard_mega" => Ok("Mega Standard Pack"),
+            "p_buffoon_normal" => Ok("Buffoon Pack"),
+            "p_buffoon_jumbo" => Ok("Jumbo Buffoon Pack"),
+            "p_buffoon_mega" => Ok("Mega Buffoon Pack"),
+            "p_spectral_normal" => Ok("Spectral Pack"),
+            "p_spectral_jumbo" => Ok("Jumbo Spectral Pack"),
+            "p_spectral_mega" => Ok("Mega Spectral Pack"),
+            _ => Err(format!("unsupported original pack key: {key}")),
+        }
+    }
+
+    fn normalize_original_pack_key(key: &str) -> String {
+        let Some((prefix, suffix)) = key.rsplit_once('_') else {
+            return key.to_owned();
+        };
+        if suffix.chars().all(|ch| ch.is_ascii_digit()) {
+            prefix.to_owned()
+        } else {
+            key.to_owned()
+        }
+    }
+
+    fn original_tag_name(key: &str) -> Result<&'static str, String> {
+        match key {
+            "" => Ok(""),
+            "tag_uncommon" => Ok("Uncommon Tag"),
+            "tag_rare" => Ok("Rare Tag"),
+            "tag_negative" => Ok("Negative Tag"),
+            "tag_foil" => Ok("Foil Tag"),
+            "tag_holo" => Ok("Holographic Tag"),
+            "tag_polychrome" => Ok("Polychrome Tag"),
+            "tag_investment" => Ok("Investment Tag"),
+            "tag_voucher" => Ok("Voucher Tag"),
+            "tag_boss" => Ok("Boss Tag"),
+            "tag_standard" => Ok("Standard Tag"),
+            "tag_charm" => Ok("Charm Tag"),
+            "tag_meteor" => Ok("Meteor Tag"),
+            "tag_buffoon" => Ok("Buffoon Tag"),
+            "tag_handy" => Ok("Handy Tag"),
+            "tag_garbage" => Ok("Garbage Tag"),
+            "tag_ethereal" => Ok("Ethereal Tag"),
+            "tag_coupon" => Ok("Coupon Tag"),
+            "tag_double" => Ok("Double Tag"),
+            "tag_juggle" => Ok("Juggle Tag"),
+            "tag_d_six" => Ok("D6 Tag"),
+            "tag_top_up" => Ok("Top-up Tag"),
+            "tag_skip" => Ok("Speed Tag"),
+            "tag_orbital" => Ok("Orbital Tag"),
+            "tag_economy" => Ok("Economy Tag"),
+            _ => Err(format!("unsupported original tag key: {key}")),
+        }
     }
 
     fn compare_duration(a: &Duration, b: &Duration) -> CmpOrdering {
@@ -1033,56 +1335,75 @@ mod windows_harness {
         output: OutputOptions,
     ) {
         let color = output.use_color();
-        print_section("Case Comparison", color);
+        print_section("Rust vs Original Brainstorm", color);
         println!(
-            "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {:>10} {:>15} {:>17} {:>11} samples",
+            "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {:>11} {:>17} {:>17} {:>11} samples",
             "case",
             "group",
             "shape",
             "scan",
             "rust/s",
-            "cpp/s",
-            "rust/cpp",
-            "mean ms R/C",
-            "ns/seed R/C",
-            "cv R/C",
+            "original/s",
+            "rust/orig",
+            "mean ms R/O",
+            "ns/seed R/O",
+            "cv R/O",
         );
         println!("{}", paint(color, ANSI_DIM, &"─".repeat(150)));
         for comparison in comparisons {
-            let rust_ratio = comparison.rust_vs_cpp_ratio();
-            let ratio = paint(
-                color,
-                ratio_color(rust_ratio, min_ratio),
-                &format!("{rust_ratio:>10.3}x"),
-            );
-            let cv_pair = format!(
-                "{:.1}/{:.1}%",
-                comparison.rust.coefficient_variation * 100.0,
-                comparison.cpp.coefficient_variation * 100.0,
-            );
-            println!(
-                "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {} {:>15} {:>17} {:>11} R{} C{}",
-                comparison.rust.case_name,
-                comparison.rust.group.label(),
-                comparison.rust.shape.label(),
-                format!("{:.1}%", comparison.rust.scanned_pct * 100.0),
-                format_rate(comparison.rust.seeds_per_sec),
-                format_rate(comparison.cpp.seeds_per_sec),
-                ratio,
-                format!(
-                    "{:.3}/{:.3}",
-                    ms(comparison.rust.mean_elapsed),
-                    ms(comparison.cpp.mean_elapsed)
-                ),
-                format!(
-                    "{}/{}",
-                    format_ns(comparison.rust.ns_per_seed),
-                    format_ns(comparison.cpp.ns_per_seed)
-                ),
-                cv_pair,
-                sparkline(&comparison.rust.runs),
-                sparkline(&comparison.cpp.runs),
-            );
+            if let Some(original) = &comparison.original {
+                let rust_ratio = comparison
+                    .rust_vs_original_ratio()
+                    .expect("original comparison has ratio");
+                let ratio = paint(
+                    color,
+                    ratio_color(rust_ratio, min_ratio.max(1.0)),
+                    &format!("{rust_ratio:>10.3}x"),
+                );
+                let cv_pair = format!(
+                    "{:.1}/{:.1}%",
+                    comparison.rust.coefficient_variation * 100.0,
+                    original.coefficient_variation * 100.0,
+                );
+                println!(
+                    "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {} {:>17} {:>17} {:>11} R{} O{}",
+                    comparison.rust.case_name,
+                    comparison.rust.group.label(),
+                    comparison.rust.shape.label(),
+                    format!("{:.1}%", comparison.rust.scanned_pct * 100.0),
+                    format_rate(comparison.rust.seeds_per_sec),
+                    format_rate(original.seeds_per_sec),
+                    ratio,
+                    format!(
+                        "{:.3}/{:.3}",
+                        ms(comparison.rust.mean_elapsed),
+                        ms(original.mean_elapsed)
+                    ),
+                    format!(
+                        "{}/{}",
+                        format_ns(comparison.rust.ns_per_seed),
+                        format_ns(original.ns_per_seed)
+                    ),
+                    cv_pair,
+                    sparkline(&comparison.rust.runs),
+                    sparkline(&original.runs),
+                );
+            } else if let Some(reason) = comparison.original_skip {
+                println!(
+                    "{:<18} {:<9} {:<6} {:>7} {:>11} {:>11} {:>11} {:>17} {:>17} {:>11} {}",
+                    comparison.rust.case_name,
+                    comparison.rust.group.label(),
+                    comparison.rust.shape.label(),
+                    format!("{:.1}%", comparison.rust.scanned_pct * 100.0),
+                    format_rate(comparison.rust.seeds_per_sec),
+                    "skipped",
+                    "n/a",
+                    format!("{:.3}/n/a", ms(comparison.rust.mean_elapsed)),
+                    format!("{}/n/a", format_ns(comparison.rust.ns_per_seed)),
+                    format!("{:.1}/n/a%", comparison.rust.coefficient_variation * 100.0),
+                    paint(color, ANSI_DIM, reason),
+                );
+            }
         }
         print_group_report(comparisons, min_ratio, color);
         print_ranked_report(comparisons, min_ratio, color);
@@ -1093,34 +1414,32 @@ mod windows_harness {
         print_section("Group Speedups", color);
         println!(
             "{:<10} {:>5} {:>9} {:>12} {:<20} {:<20} meter",
-            "group", "cases", "rust wins", "gmean", "best", "worst",
+            "group", "cases", "measured", "gmean", "best", "worst",
         );
         println!("{}", paint(color, ANSI_DIM, &"─".repeat(98)));
         for group in bench_group_order() {
             let group_comparisons: Vec<_> = comparisons
                 .iter()
-                .filter(|comparison| comparison.rust.group == group)
+                .filter(|comparison| {
+                    comparison.rust.group == group && comparison.original.is_some()
+                })
                 .collect();
             if group_comparisons.is_empty() {
                 continue;
             }
-            let rust_wins = group_comparisons
-                .iter()
-                .filter(|comparison| comparison.rust_vs_cpp_ratio() >= 1.0)
-                .count();
             let gmean = geometric_mean(
                 &group_comparisons
                     .iter()
-                    .map(|comparison| comparison.rust_vs_cpp_ratio())
+                    .filter_map(|comparison| comparison.rust_vs_original_ratio())
                     .collect::<Vec<_>>(),
             );
             let mut best = group_comparisons[0];
             let mut worst = group_comparisons[0];
             for comparison in &group_comparisons {
-                if comparison.rust_vs_cpp_ratio() > best.rust_vs_cpp_ratio() {
+                if comparison.rust_vs_original_ratio() > best.rust_vs_original_ratio() {
                     best = comparison;
                 }
-                if comparison.rust_vs_cpp_ratio() < worst.rust_vs_cpp_ratio() {
+                if comparison.rust_vs_original_ratio() < worst.rust_vs_original_ratio() {
                     worst = comparison;
                 }
             }
@@ -1128,15 +1447,23 @@ mod windows_harness {
                 "{:<10} {:>5} {:>4}/{:<4} {} {:<20} {:<20} {}",
                 group.label(),
                 group_comparisons.len(),
-                rust_wins,
+                group_comparisons.len(),
                 group_comparisons.len(),
                 paint(
                     color,
                     ratio_color(gmean, min_ratio),
                     &format!("{gmean:>12.3}x")
                 ),
-                format!("{} {:.2}x", best.rust.case_name, best.rust_vs_cpp_ratio()),
-                format!("{} {:.2}x", worst.rust.case_name, worst.rust_vs_cpp_ratio()),
+                format!(
+                    "{} {:.2}x",
+                    best.rust.case_name,
+                    best.rust_vs_original_ratio().expect("measured original")
+                ),
+                format!(
+                    "{} {:.2}x",
+                    worst.rust.case_name,
+                    worst.rust_vs_original_ratio().expect("measured original")
+                ),
                 ratio_meter(gmean, color),
             );
         }
@@ -1145,27 +1472,34 @@ mod windows_harness {
     fn print_ranked_report(comparisons: &[BenchComparison], min_ratio: f64, color: bool) {
         let mut behind: Vec<_> = comparisons
             .iter()
-            .filter(|comparison| comparison.rust_vs_cpp_ratio() < 1.0)
+            .filter(|comparison| {
+                comparison
+                    .rust_vs_original_ratio()
+                    .is_some_and(|ratio| ratio < 1.0)
+            })
             .collect();
         behind.sort_by(|a, b| {
-            a.rust_vs_cpp_ratio()
-                .partial_cmp(&b.rust_vs_cpp_ratio())
+            a.rust_vs_original_ratio()
+                .expect("measured original")
+                .partial_cmp(&b.rust_vs_original_ratio().expect("measured original"))
                 .unwrap_or(CmpOrdering::Equal)
         });
 
-        print_section("Rust Behind C++", color);
+        print_section("Rust Behind Original", color);
         if behind.is_empty() {
             println!("  none in this selection");
         } else {
             for comparison in behind.iter().take(5) {
-                let rust_ratio = comparison.rust_vs_cpp_ratio();
+                let rust_ratio = comparison
+                    .rust_vs_original_ratio()
+                    .expect("measured original");
                 let ratio = paint(
                     color,
                     ratio_color(rust_ratio, min_ratio),
                     &format!("{rust_ratio:.3}x"),
                 );
                 println!(
-                    "  {:<18} {:>11}  C++ faster by {:>6.1}%  {}",
+                    "  {:<18} {:>11}  Original faster by {:>6.1}%  {}",
                     comparison.rust.case_name,
                     ratio,
                     (1.0 - rust_ratio) * 100.0,
@@ -1176,20 +1510,27 @@ mod windows_harness {
 
         let mut ahead: Vec<_> = comparisons
             .iter()
-            .filter(|comparison| comparison.rust_vs_cpp_ratio() >= 1.0)
+            .filter(|comparison| {
+                comparison
+                    .rust_vs_original_ratio()
+                    .is_some_and(|ratio| ratio >= 1.0)
+            })
             .collect();
         ahead.sort_by(|a, b| {
-            b.rust_vs_cpp_ratio()
-                .partial_cmp(&a.rust_vs_cpp_ratio())
+            b.rust_vs_original_ratio()
+                .expect("measured original")
+                .partial_cmp(&a.rust_vs_original_ratio().expect("measured original"))
                 .unwrap_or(CmpOrdering::Equal)
         });
 
-        print_section("Rust Ahead C++", color);
+        print_section("Rust Ahead Original", color);
         if ahead.is_empty() {
             println!("  none in this selection");
         } else {
             for comparison in ahead.iter().take(5) {
-                let rust_ratio = comparison.rust_vs_cpp_ratio();
+                let rust_ratio = comparison
+                    .rust_vs_original_ratio()
+                    .expect("measured original");
                 let ratio = paint(color, ANSI_GREEN, &format!("{rust_ratio:.3}x"));
                 println!(
                     "  {:<18} {:>11}  Rust faster by {:>6.1}%  {}",
@@ -1207,7 +1548,10 @@ mod windows_harness {
             .iter()
             .filter(|comparison| {
                 comparison.rust.coefficient_variation > 0.05
-                    || comparison.cpp.coefficient_variation > 0.05
+                    || comparison
+                        .original
+                        .as_ref()
+                        .is_some_and(|original| original.coefficient_variation > 0.05)
             })
             .collect();
         if noisy.is_empty() {
@@ -1215,13 +1559,43 @@ mod windows_harness {
         }
         print_section("High Variance", color);
         for comparison in noisy {
+            let original_cv = comparison.original.as_ref().map_or_else(
+                || "n/a".to_owned(),
+                |original| format!("{:>5.1}%", original.coefficient_variation * 100.0),
+            );
             println!(
-                "  {:<18} rust cv {:>5.1}%   cpp cv {:>5.1}%   repeat or raise budget before trusting small deltas",
+                "  {:<18} rust cv {:>5.1}%   original cv {}   repeat or raise budget before trusting small deltas",
                 comparison.rust.case_name,
                 comparison.rust.coefficient_variation * 100.0,
-                comparison.cpp.coefficient_variation * 100.0,
+                original_cv,
             );
         }
+    }
+
+    fn print_original_tsv_compare(comparison: &BenchComparison, min_ratio: f64) {
+        let Some(original) = &comparison.original else {
+            if let Some(reason) = comparison.original_skip {
+                println!(
+                    "skip\toriginal\t{}\t{}\t{}\t{}\t\t\t{}\t\t\t\t\t\t\t\t\t\t{}",
+                    comparison.rust.case_name,
+                    comparison.rust.group.key(),
+                    comparison.rust.shape.label(),
+                    comparison.rust.budget,
+                    comparison.rust.threads,
+                    reason,
+                );
+            }
+            return;
+        };
+        print_tsv_ratio(
+            "rust-vs-original",
+            &comparison.rust,
+            original,
+            comparison
+                .rust_vs_original_ratio()
+                .expect("original comparison has ratio"),
+            min_ratio,
+        );
     }
 
     fn print_section(title: &str, color: bool) {
@@ -1284,13 +1658,7 @@ mod windows_harness {
     }
 
     fn print_tsv_compare(comparison: &BenchComparison, min_ratio: f64) {
-        print_tsv_ratio(
-            "rust-vs-cpp",
-            &comparison.rust,
-            &comparison.cpp,
-            comparison.rust_vs_cpp_ratio(),
-            min_ratio,
-        );
+        print_original_tsv_compare(comparison, min_ratio);
     }
 
     fn print_tsv_ratio(
@@ -1300,12 +1668,8 @@ mod windows_harness {
         ratio: f64,
         target_ratio: f64,
     ) {
-        let status = if lhs.result != rhs.result {
-            "result-mismatch"
-        } else if ratio >= target_ratio {
+        let status = if ratio >= target_ratio {
             "ok"
-        } else if relation == "rust-vs-cpp" {
-            "regression"
         } else {
             "below-target"
         };
@@ -1479,274 +1843,6 @@ mod windows_harness {
         let mut out: String = value.chars().take(width.saturating_sub(1)).collect();
         out.push('…');
         out
-    }
-
-    const TAG_KEYS: &[&str] = &[
-        "tag_uncommon",
-        "tag_rare",
-        "tag_negative",
-        "tag_foil",
-        "tag_holo",
-        "tag_polychrome",
-        "tag_investment",
-        "tag_voucher",
-        "tag_boss",
-        "tag_standard",
-        "tag_charm",
-        "tag_meteor",
-        "tag_buffoon",
-        "tag_handy",
-        "tag_garbage",
-        "tag_ethereal",
-        "tag_coupon",
-        "tag_double",
-        "tag_juggle",
-        "tag_d_six",
-        "tag_top_up",
-        "tag_skip",
-        "tag_orbital",
-        "tag_economy",
-    ];
-
-    const VOUCHER_KEYS: &[&str] = &[
-        "v_overstock_norm",
-        "v_overstock_plus",
-        "v_clearance_sale",
-        "v_liquidation",
-        "v_hone",
-        "v_glow_up",
-        "v_reroll_surplus",
-        "v_reroll_glut",
-        "v_crystal_ball",
-        "v_omen_globe",
-        "v_telescope",
-        "v_observatory",
-        "v_grabber",
-        "v_nacho_tong",
-        "v_wasteful",
-        "v_recyclomancy",
-        "v_tarot_merchant",
-        "v_tarot_tycoon",
-        "v_planet_merchant",
-        "v_planet_tycoon",
-        "v_seed_money",
-        "v_money_tree",
-        "v_blank",
-        "v_antimatter",
-        "v_magic_trick",
-        "v_illusion",
-        "v_hieroglyph",
-        "v_petroglyph",
-        "v_directors_cut",
-        "v_paint_brush",
-        "v_retcon",
-        "v_palette",
-    ];
-
-    const PACK_KEYS: &[&str] = &[
-        "p_arcana_normal_1",
-        "p_arcana_jumbo_1",
-        "p_arcana_mega_1",
-        "p_celestial_normal_1",
-        "p_celestial_jumbo_1",
-        "p_celestial_mega_1",
-        "p_standard_normal_1",
-        "p_standard_jumbo_1",
-        "p_standard_mega_1",
-        "p_buffoon_normal_1",
-        "p_buffoon_jumbo_1",
-        "p_buffoon_mega_1",
-        "p_spectral_normal_1",
-        "p_spectral_jumbo_1",
-        "p_spectral_mega_1",
-    ];
-
-    const DECK_KEYS: &[&str] = &[
-        "b_red",
-        "b_blue",
-        "b_yellow",
-        "b_green",
-        "b_black",
-        "b_magic",
-        "b_nebula",
-        "b_ghost",
-        "b_abandoned",
-        "b_checkered",
-        "b_zodiac",
-        "b_painted",
-        "b_anaglyph",
-        "b_plasma",
-        "b_erratic",
-        "b_challenge",
-    ];
-
-    fn base_case(name: &'static str) -> Case {
-        Case {
-            name,
-            group: BenchGroup::Baseline,
-            shape: BenchShape::Mixed,
-            note: "correctness fixture",
-            seed_start: Some(""),
-            voucher: Some(""),
-            pack: Some(""),
-            tag1: Some(""),
-            tag2: Some(""),
-            joker: Some(""),
-            joker_location: Some("any"),
-            souls: 0.0,
-            observatory: false,
-            perkeo: false,
-            deck: Some("b_red"),
-            erratic: false,
-            no_faces: false,
-            min_face_cards: 0,
-            suit_ratio: 0.0,
-            num_seeds: 1,
-            threads: 1,
-        }
-    }
-
-    fn compare_cases() -> Vec<Case> {
-        let mut cases = Vec::new();
-
-        let mut nulls = base_case("null_strings_no_filter_1");
-        nulls.seed_start = None;
-        nulls.voucher = None;
-        nulls.pack = None;
-        nulls.tag1 = None;
-        nulls.tag2 = None;
-        nulls.joker = None;
-        nulls.joker_location = None;
-        nulls.deck = None;
-        cases.push(nulls);
-
-        cases.push(base_case("empty_no_filter_1"));
-
-        let mut one = base_case("1_no_filter_1");
-        one.seed_start = Some("1");
-        cases.push(one);
-
-        let mut no_match = base_case("no_match_tiny");
-        no_match.tag1 = Some("tag_charm");
-        cases.push(no_match);
-
-        let mut tag = base_case("tag_charm_10000");
-        tag.tag1 = Some("tag_charm");
-        tag.num_seeds = 10_000;
-        cases.push(tag);
-
-        let mut voucher = base_case("v_telescope_10000");
-        voucher.voucher = Some("v_telescope");
-        voucher.num_seeds = 10_000;
-        cases.push(voucher);
-
-        let mut pack = base_case("pack_spectral_10000");
-        pack.pack = Some("p_spectral_mega_1");
-        pack.num_seeds = 10_000;
-        cases.push(pack);
-
-        let mut observatory = base_case("observatory_100000");
-        observatory.observatory = true;
-        observatory.num_seeds = 100_000;
-        cases.push(observatory);
-
-        let mut erratic = base_case("erratic_faces_10000");
-        erratic.deck = Some("b_erratic");
-        erratic.erratic = true;
-        erratic.min_face_cards = 12;
-        erratic.num_seeds = 10_000;
-        cases.push(erratic);
-
-        let mut joker_shop = base_case("joker_shop_burnt_50000");
-        joker_shop.joker = Some("Burnt Joker");
-        joker_shop.joker_location = Some("shop");
-        joker_shop.num_seeds = 50_000;
-        cases.push(joker_shop);
-
-        let mut joker_pack = base_case("joker_pack_reserved_parking_10000");
-        joker_pack.joker = Some("Reserved Parking");
-        joker_pack.joker_location = Some("pack");
-        joker_pack.num_seeds = 10_000;
-        cases.push(joker_pack);
-
-        let mut joker_any_pack_filter = base_case("joker_any_blueprint_buffoon_50000");
-        joker_any_pack_filter.joker = Some("Blueprint");
-        joker_any_pack_filter.joker_location = Some("any");
-        joker_any_pack_filter.pack = Some("p_buffoon_mega_1");
-        joker_any_pack_filter.num_seeds = 50_000;
-        cases.push(joker_any_pack_filter);
-
-        let mut souls = base_case("souls_one_50000");
-        souls.souls = 1.0;
-        souls.num_seeds = 50_000;
-        cases.push(souls);
-
-        let mut souls_pack = base_case("souls_one_spectral_50000");
-        souls_pack.pack = Some("p_spectral_mega_1");
-        souls_pack.souls = 1.0;
-        souls_pack.num_seeds = 50_000;
-        cases.push(souls_pack);
-
-        let mut perkeo = base_case("perkeo_20000");
-        perkeo.perkeo = true;
-        perkeo.num_seeds = 20_000;
-        cases.push(perkeo);
-
-        let mut threaded_no_match = base_case("threaded_shop_miss_5000");
-        threaded_no_match.joker = Some("Perkeo");
-        threaded_no_match.joker_location = Some("shop");
-        threaded_no_match.num_seeds = 5_000;
-        threaded_no_match.threads = 2;
-        cases.push(threaded_no_match);
-
-        let mut wrap = base_case("wrap_end_no_filter_2");
-        wrap.seed_start = Some("ZZZZZZZZ");
-        wrap.num_seeds = 2;
-        cases.push(wrap);
-
-        add_parser_matrix_cases(&mut cases);
-
-        cases
-    }
-
-    fn repeated_alloc_free(dll: &Dll, repeats: usize) -> Result<bool, String> {
-        let mut case = base_case("alloc_free_stress");
-        case.seed_start = Some("1");
-        for _ in 0..repeats {
-            if dll.run(&case)?.as_deref() != Some("1") {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn add_parser_matrix_cases(cases: &mut Vec<Case>) {
-        for &key in TAG_KEYS {
-            let mut case = base_case("parser_tag");
-            case.name = key;
-            case.tag1 = Some(key);
-            cases.push(case);
-        }
-        for &key in VOUCHER_KEYS {
-            let mut case = base_case("parser_voucher");
-            case.name = key;
-            case.voucher = Some(key);
-            cases.push(case);
-        }
-        for &key in PACK_KEYS {
-            let mut case = base_case("parser_pack");
-            case.name = key;
-            case.pack = Some(key);
-            cases.push(case);
-        }
-        for &key in DECK_KEYS {
-            let mut case = base_case("parser_deck");
-            case.name = key;
-            case.deck = Some(key);
-            case.erratic = key == "b_erratic";
-            case.min_face_cards = if case.erratic { 12 } else { 0 };
-            cases.push(case);
-        }
     }
 
     fn selected_bench_cases(

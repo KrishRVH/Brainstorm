@@ -30,7 +30,7 @@ mod tests {
     use crate::seed::Seed;
 
     #[test]
-    fn seed_order_starts_like_cpp() {
+    fn seed_order_starts_with_expected_prefix() {
         let mut seed = Seed::default();
         assert_eq!(seed.to_string(), "");
         seed.next();
@@ -48,7 +48,7 @@ mod tests {
     }
 
     #[test]
-    fn seed_id_strings_match_cpp_oracle() {
+    fn seed_id_strings_match_golden_vectors() {
         let cases = [
             (0, ""),
             (1, "1"),
@@ -127,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn rng_vectors_match_cpp_oracle() {
+    fn rng_vectors_match_golden_vectors() {
         let hash_cases = [
             ("", 1.0),
             ("1", 0.15694342689690188),
@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn search_vectors_match_cpp_oracle() {
+    fn search_vectors_match_golden_vectors() {
         let empty = FilterConfig::default();
         assert_eq!(
             brainstorm_search_core("", &empty, 1, 1).as_deref(),
@@ -579,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn current_joker_pools_match_cpp_current_version_boundaries() {
+    fn current_joker_pools_match_current_version_boundaries() {
         assert_eq!(COMMON_JOKERS.len(), 61);
         assert_eq!(COMMON_JOKERS_100.len(), 60);
         assert_eq!(COMMON_JOKERS[47], Item::Reserved_Parking);
@@ -626,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn ffi_contract_matches_cpp_empty_and_allocated_results() {
+    fn ffi_contract_matches_empty_and_allocated_results() {
         let empty = CString::new("").expect("literal has no interior nul");
         let one = CString::new("1").expect("literal has no interior nul");
 

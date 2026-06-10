@@ -2,9 +2,6 @@
 -- Provides the settings interface and configuration callbacks
 -- Created by OceanRamen. Rewrite by KRVH. Immolate DLL by MathIsFun0.
 
-local lovely = require("lovely")
-local nativefs = require("nativefs")
-
 -- Performance: Cache frequently used functions
 local ipairs = ipairs
 local pairs = pairs

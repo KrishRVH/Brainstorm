@@ -3,32 +3,35 @@
 Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 
 ## Credits
-- Brainstorm created by OceanRamen. Rewrite by KRVH.
+- Brainstorm created by OceanRamen. Fork and rewrite by KRVH.
 - Immolate created by MathIsFun0.
 
 ## Project Structure & Module Organization
 - Lua entry/UI: `Brainstorm.lua`, `UI.lua`; config/compat in `config.lua`, `lovely.toml`, `nativefs.lua`, `steamodded_compat.lua`.
-- Native sources: `Immolate/Rust/` is the only Rust DLL implementation. `Immolate/CPP/*.cpp` and `Immolate/CPP/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/CPP/brainstorm.cpp`).
-- Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use `mise.toml`. The C++ oracle artifact is kept under `target/cpp/`, and the current Rust artifact is kept under `target/rust/`.
+- Native sources: `Immolate/` is the Rust DLL crate. `Immolate/src/` contains the implementation and benchmark harnesses.
+- Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use `mise.toml`. The current Rust artifact is kept under `target/rust/`.
+- Version source of truth: `[manifest].version` in `lovely.toml`. `steamodded_compat.lua` must stay in sync; use `VERSION=x.y mise run bump-version`.
 - `BalatroSource/` is the literal game source; never commit it to git and always use it as the source of truth for understanding game behavior.
 - `BalatroSource_Guide.md` summarizes seed/search-relevant mechanics verified from `BalatroSource/`.
-- Logging is currently disabled in Lua/C++ and the Rust `immolate_set_log_path` export is a no-op; keep it off unless explicitly re-enabled.
+- Logging is currently disabled in Lua and the Rust `immolate_set_log_path` export is a no-op; keep it off unless explicitly re-enabled.
 
 ## Build and Development Commands
 - First run in a checkout: `mise trust`.
+- Install mise-managed tools and local Lua lint tools: `mise run setup`.
+- Dependency check: `mise run doctor`.
 - Build: `mise run build` outputs the Rust `Immolate.dll`.
-- C++ oracle: `mise run build-cpp`.
 - Rust validation: `mise run check-rust`.
-- C++ vs Rust parity: `mise run compare`.
-- Benchmarks: `mise run bench-compare`.
-- Strict full-suite benchmark gate: `mise run bench-full`.
-- Actual Lua UI UX benchmark gate: `mise run bench-ux`.
+- Full validation: `mise run check`.
+- Benchmarks: `mise run bench-compare` compares Rust against the Original Brainstorm DLL where the older ABI can represent the fixture.
+- Full-suite benchmark report: `mise run bench-full`.
+- Actual Lua UI UX benchmark report: `mise run bench-ux`.
 - Pretty full-suite dashboard: `mise run bench-pretty`.
 - Deploy: `TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm mise run deploy`.
-- Release: `mise run release` (builds the DLL and zips `release/Brainstorm_v3.1.zip`).
-- Dev release workflow: `.github/workflows/dev-release.yml` publishes/updates the `dev-release` prerelease on `master` pushes and manual dispatch.
-- Formatting: `mise run format` (runs stylua/clang-format/rustfmt when available).
-- Lint: `mise run lint` (stylua/clang-format/rustfmt/clippy checks).
+- Release: `mise run release` (runs validation, builds the DLL, and zips `release/Brainstorm_v<VERSION>.zip`).
+- Release workflow: `.github/workflows/release.yml` publishes/updates the `latest` production release on `master` pushes and manual dispatch.
+- Version bump: `VERSION=3.2 mise run bump-version`.
+- Formatting: `mise run format` (runs stylua and rustfmt).
+- Lint: `mise run lint` (stylua, LuaJIT bytecode syntax, luacheck, rustfmt, and clippy checks).
 - Clean: `mise run clean`.
 - No standalone scripts or test runners; use the mise tasks and validate in-game.
 
@@ -44,8 +47,7 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 ## Coding Style & Naming Conventions
 - Lua: Stylua (`stylua.toml`) — 2-space indent, ~80 cols. Avoid globals, return tables explicitly.
 - Rust: rustfmt and clippy; keep unsafe isolated at FFI/harness boundaries.
-- C++: C++17 with RAII; keep stdout minimal. clang-format when available.
-- Naming: Lua locals/functions lower_snake; constants upper snake (`Brainstorm.VERSION`); C++ types PascalCase, file-scope statics as needed.
+- Naming: Lua locals/functions lower_snake; constants upper snake (`Brainstorm.VERSION`).
 
 ## Commit & Pull Request Guidelines
 - Use short, imperative subjects (scope prefix optional: `core:`, `ui:`, `dll:`). Do not commit `release/` artifacts.

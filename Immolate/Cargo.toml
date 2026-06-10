@@ -74,8 +74,8 @@ unnecessary_wraps = "allow"
 use_self = "allow"
 wildcard_imports = "allow"
 
-# The RNG and seed code is a bit-exact port of Lua/Balatro/C++ behavior. These
-# lints suggest cleaner Rust but can change floating-point rounding or obscure
+# The RNG and seed code preserves Lua/Balatro behavior exactly. These lints
+# suggest cleaner Rust but can change floating-point rounding or obscure
 # constants that were copied intentionally.
 approx_constant = "allow"
 excessive_precision = "allow"

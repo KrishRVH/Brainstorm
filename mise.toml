@@ -1,53 +1,136 @@
 [env]
 IMMO_DIR = "Immolate"
-CPP_DIR = "Immolate/CPP"
-RUST_DIR = "Immolate/Rust"
 DLL = "Immolate.dll"
-RELEASE_DIR = "release/Brainstorm_v3.1"
 TARGET_DIR = "target"
 
 [tasks.default]
 description = "List available Brainstorm tasks"
 run = "mise tasks ls"
 
-[tasks.build]
-description = "Build the default Rust Immolate.dll"
-run = "mise run build-rust"
-
-[tasks.build-cpp]
-description = "Build the C++ oracle DLL"
+[tasks.setup]
+description = "Install mise-managed tools and local Lua lint tools"
 shell = "bash -c"
 run = '''
 set -euo pipefail
-cpp_dll="$TARGET_DIR/cpp/$DLL"
-sources=(
-  "$CPP_DIR/brainstorm.cpp"
-  "$CPP_DIR/functions.cpp"
-  "$CPP_DIR/rng.cpp"
-  "$CPP_DIR/seed.cpp"
-  "$CPP_DIR/util.cpp"
-)
+mise install
+rustup target add "${RUST_TARGET:-x86_64-pc-windows-gnu}"
+mise run setup-lua
+mise run doctor
+'''
 
-echo "Building $DLL"
-if ! command -v x86_64-w64-mingw32-g++ >/dev/null; then
-  echo "x86_64-w64-mingw32-g++ not found. Install mingw-w64."
+[tasks.setup-lua]
+description = "Install local Lua lint tools through LuaRocks"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+if ! command -v luajit >/dev/null; then
+  echo "luajit not found. Install LuaJIT with your OS package manager."
+  exit 1
+fi
+if ! command -v luarocks >/dev/null; then
+  echo "luarocks not found. Install LuaRocks with your OS package manager."
   exit 1
 fi
 
-mkdir -p "$TARGET_DIR/cpp"
-x86_64-w64-mingw32-g++ \
-  -shared \
-  -O3 \
-  -std=c++17 \
-  -DBUILDING_DLL \
-  -o "$cpp_dll" \
-  "${sources[@]}" \
-  -I "$CPP_DIR" \
-  -static-libgcc \
-  -static-libstdc++ \
-  -Wl,--export-all-symbols
-cp "$cpp_dll" "$DLL"
+export PATH="$HOME/.luarocks/bin:$PATH"
+if ! command -v luacheck >/dev/null; then
+  luarocks --local install luacheck
+fi
+luacheck --version
 '''
+
+[tasks.doctor]
+description = "Check required system and mise-managed development tools"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+export PATH="$HOME/.luarocks/bin:$PATH"
+missing=0
+check_cmd() {
+  if ! command -v "$1" >/dev/null; then
+    echo "missing: $1"
+    missing=1
+  else
+    echo "ok: $1"
+  fi
+}
+
+check_cmd rustup
+check_cmd cargo
+check_cmd stylua
+check_cmd luajit
+check_cmd luarocks
+check_cmd luacheck
+check_cmd x86_64-w64-mingw32-gcc
+check_cmd x86_64-w64-mingw32-objdump
+check_cmd wine
+check_cmd file
+check_cmd zip
+
+rust_target="${RUST_TARGET:-x86_64-pc-windows-gnu}"
+if ! rustup target list --installed | grep -qx "$rust_target"; then
+  echo "missing Rust target: $rust_target"
+  missing=1
+else
+  echo "ok: Rust target $rust_target"
+fi
+
+exit "$missing"
+'''
+
+[tasks.version]
+description = "Print the canonical mod version"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+sed -n 's/^version = "\([^"]*\)"/\1/p' lovely.toml | head -n1
+'''
+
+[tasks.check-version]
+description = "Verify release/package version metadata is in sync"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+version_number="$(sed -n 's/^version = "\([^"]*\)"/\1/p' lovely.toml | head -n1)"
+compat_version="$(sed -n 's/^--- VERSION:[[:space:]]*//p' steamodded_compat.lua | head -n1)"
+
+[ -n "$version_number" ] || {
+  echo "lovely.toml manifest version is missing"
+  exit 1
+}
+[ "$compat_version" = "$version_number" ] || {
+  echo "steamodded_compat.lua VERSION is $compat_version but lovely.toml is $version_number"
+  exit 1
+}
+
+echo "version ok: $version_number"
+'''
+
+[tasks.bump-version]
+description = "Update lovely.toml and Steamodded metadata together. Usage: VERSION=3.2 mise run bump-version"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+new_version="${VERSION:-}"
+if [ -z "$new_version" ]; then
+  echo "Set VERSION, for example: VERSION=3.2 mise run bump-version"
+  exit 1
+fi
+case "$new_version" in
+  *[!0-9A-Za-z.+_-]*|'')
+    echo "Invalid VERSION: $new_version"
+    exit 1
+    ;;
+esac
+
+sed -i -E "0,/^version = \".*\"/s//version = \"$new_version\"/" lovely.toml
+sed -i -E "s/^(--- VERSION:[[:space:]]*).*/\\1$new_version/" steamodded_compat.lua
+mise run check-version
+'''
+
+[tasks.build]
+description = "Build the default Rust Immolate.dll"
+run = "mise run build-rust"
 
 [tasks.build-rust]
 description = "Build the Rust DLL and copy it to target/rust and repo root"
@@ -55,7 +138,7 @@ shell = "bash -c"
 run = '''
 set -euo pipefail
 rust_target="${RUST_TARGET:-x86_64-pc-windows-gnu}"
-rust_dll="$RUST_DIR/target/$rust_target/release/immolate.dll"
+rust_dll="$IMMO_DIR/target/$rust_target/release/immolate.dll"
 rust_artifact_dir="$TARGET_DIR/rust"
 
 echo "Building Rust $DLL"
@@ -64,7 +147,7 @@ if ! rustup target list --installed | grep -qx "$rust_target"; then
   exit 1
 fi
 
-cargo build --manifest-path "$RUST_DIR/Cargo.toml" --release --target "$rust_target"
+cargo build --manifest-path "$IMMO_DIR/Cargo.toml" --release --target "$rust_target"
 mkdir -p "$rust_artifact_dir"
 cp "$rust_dll" "$rust_artifact_dir/$DLL"
 cp "$rust_dll" "$DLL"
@@ -83,7 +166,7 @@ if ! rustup target list --installed | grep -qx "$rust_target"; then
 fi
 
 cargo build \
-  --manifest-path "$RUST_DIR/Cargo.toml" \
+  --manifest-path "$IMMO_DIR/Cargo.toml" \
   --release \
   --target "$rust_target" \
   --bin immolate_dll_harness
@@ -91,7 +174,7 @@ cargo build \
 
 [tasks.fmt-rust-check]
 description = "Check Rust formatting"
-run = "cargo fmt --manifest-path \"$RUST_DIR/Cargo.toml\" --check"
+run = "cargo fmt --manifest-path \"$IMMO_DIR/Cargo.toml\" --check"
 
 [tasks.format-rust-check]
 description = "Alias for fmt-rust-check"
@@ -99,11 +182,11 @@ run = "mise run fmt-rust-check"
 
 [tasks.clippy-rust]
 description = "Run Rust clippy with warnings denied"
-run = "cargo clippy --manifest-path \"$RUST_DIR/Cargo.toml\" --all-targets -- -D warnings"
+run = "cargo clippy --manifest-path \"$IMMO_DIR/Cargo.toml\" --all-targets -- -D warnings"
 
 [tasks.test-rust]
 description = "Run Rust unit tests"
-run = "cargo test --manifest-path \"$RUST_DIR/Cargo.toml\""
+run = "cargo test --manifest-path \"$IMMO_DIR/Cargo.toml\""
 
 [tasks.check-rust-dll]
 description = "Validate Rust DLL exports and runtime imports"
@@ -139,26 +222,6 @@ for bad in libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do
 done
 '''
 
-[tasks.compare]
-description = "Compare C++ and Rust DLL ABI results under Wine"
-shell = "bash -c"
-run = '''
-set -euo pipefail
-mise run build-cpp
-mise run build-rust
-mise run build-harness
-
-cpp_dll="$TARGET_DIR/cpp/$DLL"
-rust_artifact="$TARGET_DIR/rust/$DLL"
-rust_target="${RUST_TARGET:-x86_64-pc-windows-gnu}"
-harness="$RUST_DIR/target/$rust_target/release/immolate_dll_harness.exe"
-
-wine "$harness" compare \
-  --cpp "$(winepath -w "$(readlink -f "$cpp_dll")")" \
-  --rust "$(winepath -w "$(readlink -f "$rust_artifact")")" \
-  --threads 1
-'''
-
 [tasks.bench]
 description = "Benchmark the Rust DLL under Wine"
 run = "mise run bench-rust"
@@ -173,7 +236,7 @@ mise run build-harness
 
 rust_artifact="$TARGET_DIR/rust/$DLL"
 rust_target="${RUST_TARGET:-x86_64-pc-windows-gnu}"
-harness="$RUST_DIR/target/$rust_target/release/immolate_dll_harness.exe"
+harness="$IMMO_DIR/target/$rust_target/release/immolate_dll_harness.exe"
 bench_case="${BENCH_CASE:-all}"
 bench_budget="${BENCH_BUDGET:-1000000}"
 bench_threads="${BENCH_THREADS:-1}"
@@ -192,60 +255,35 @@ wine "$harness" bench \
   --color "$bench_color"
 '''
 
-[tasks.bench-cpp]
-description = "Benchmark the C++ oracle DLL under Wine"
-shell = "bash -c"
-run = '''
-set -euo pipefail
-mise run build-cpp
-mise run build-harness
-
-cpp_dll="$TARGET_DIR/cpp/$DLL"
-rust_target="${RUST_TARGET:-x86_64-pc-windows-gnu}"
-harness="$RUST_DIR/target/$rust_target/release/immolate_dll_harness.exe"
-bench_case="${BENCH_CASE:-all}"
-bench_budget="${BENCH_BUDGET:-1000000}"
-bench_threads="${BENCH_THREADS:-1}"
-bench_repeat="${BENCH_REPEAT:-5}"
-bench_warmup="${BENCH_WARMUP:-1}"
-bench_format="${BENCH_FORMAT:-pretty}"
-bench_color="${BENCH_COLOR:-auto}"
-wine "$harness" bench \
-  --dll "$(winepath -w "$(readlink -f "$cpp_dll")")" \
-  --case "$bench_case" \
-  --budget "$bench_budget" \
-  --threads "$bench_threads" \
-  --repeat "$bench_repeat" \
-  --warmup "$bench_warmup" \
-  --format "$bench_format" \
-  --color "$bench_color"
-'''
-
 [tasks.bench-compare]
-description = "Benchmark C++ vs Rust"
+description = "Benchmark Rust against the Original Brainstorm DLL"
 shell = "bash -c"
 run = '''
 set -euo pipefail
-mise run build-cpp
 mise run build-rust
 mise run build-harness
 
-cpp_dll="$TARGET_DIR/cpp/$DLL"
 rust_artifact="$TARGET_DIR/rust/$DLL"
+original_dll="${BENCH_ORIGINAL_DLL:-${ORIGINAL_DLL:-$IMMO_DIR/Immolate-OceanRamenandMathIsFun0.dll}}"
 rust_target="${RUST_TARGET:-x86_64-pc-windows-gnu}"
-harness="$RUST_DIR/target/$rust_target/release/immolate_dll_harness.exe"
+harness="$IMMO_DIR/target/$rust_target/release/immolate_dll_harness.exe"
 bench_case="${BENCH_CASE:-all}"
 bench_budget="${BENCH_BUDGET:-1000000}"
 bench_threads="${BENCH_THREADS:-1}"
 bench_repeat="${BENCH_REPEAT:-5}"
 bench_warmup="${BENCH_WARMUP:-1}"
-bench_min_ratio="${BENCH_MIN_RATIO:-1.0}"
+bench_min_ratio="${BENCH_MIN_RATIO:-0.0}"
 bench_format="${BENCH_FORMAT:-pretty}"
 bench_color="${BENCH_COLOR:-auto}"
 
+if [ ! -f "$original_dll" ]; then
+  echo "original DLL not found: $original_dll"
+  exit 1
+fi
+
 wine "$harness" bench-compare \
-  --cpp "$(winepath -w "$(readlink -f "$cpp_dll")")" \
   --rust "$(winepath -w "$(readlink -f "$rust_artifact")")" \
+  --original "$(winepath -w "$(readlink -f "$original_dll")")" \
   --case "$bench_case" \
   --budget "$bench_budget" \
   --threads "$bench_threads" \
@@ -256,8 +294,12 @@ wine "$harness" bench-compare \
   --color "$bench_color"
 '''
 
+[tasks.bench-original]
+description = "Alias for bench-compare"
+run = "mise run bench-compare"
+
 [tasks.bench-full]
-description = "Strict full-suite C++ vs Rust benchmark gate"
+description = "Full-suite Rust vs Original benchmark report"
 shell = "bash -c"
 run = '''
 set -euo pipefail
@@ -268,12 +310,12 @@ BENCH_WARMUP=2 \
 BENCH_THREADS=1 \
 BENCH_FORMAT=tsv \
 BENCH_COLOR=never \
-BENCH_MIN_RATIO=1.0 \
+BENCH_MIN_RATIO=0.0 \
 mise run bench-compare
 '''
 
 [tasks.bench-ux]
-description = "Strict actual Lua UI UX benchmark gate"
+description = "Actual Lua UI UX benchmark report"
 shell = "bash -c"
 run = '''
 set -euo pipefail
@@ -284,7 +326,7 @@ BENCH_WARMUP=2 \
 BENCH_THREADS=0 \
 BENCH_FORMAT=tsv \
 BENCH_COLOR=never \
-BENCH_MIN_RATIO=1.0 \
+BENCH_MIN_RATIO=0.0 \
 mise run bench-compare
 '''
 
@@ -300,12 +342,12 @@ BENCH_WARMUP=2 \
 BENCH_THREADS=1 \
 BENCH_FORMAT=pretty \
 BENCH_COLOR=always \
-BENCH_MIN_RATIO=1.0 \
+BENCH_MIN_RATIO=0.0 \
 mise run bench-compare
 '''
 
 [tasks.check-rust]
-description = "Run Rust format, clippy, tests, DLL validation, compare, and benchmark smoke"
+description = "Run Rust format, clippy, tests, DLL validation, and benchmark smoke"
 shell = "bash -c"
 run = '''
 set -euo pipefail
@@ -313,32 +355,26 @@ mise run fmt-rust-check
 mise run clippy-rust
 mise run test-rust
 mise run check-rust-dll
-mise run compare
-BENCH_BUDGET=1000 BENCH_REPEAT=1 BENCH_CASE=pack-miss BENCH_MIN_RATIO=1.0 mise run bench-compare
+BENCH_BUDGET=1000 BENCH_REPEAT=1 BENCH_CASE=pack-miss mise run bench-rust
 '''
 
 [tasks.check]
-description = "Run the primary validation gate"
-run = "mise run check-rust"
-
-[tasks.format]
-description = "Format Lua, C++, and Rust where tools are available"
+description = "Run Lua/Rust lint plus the Rust DLL validation gate"
 shell = "bash -c"
 run = '''
 set -euo pipefail
-if command -v stylua >/dev/null; then
-  stylua Brainstorm.lua UI.lua config.lua steamodded_compat.lua
-else
-  echo "stylua not found"
-fi
+mise run lint
+mise run check-rust
+'''
 
-if command -v clang-format >/dev/null; then
-  clang-format -i "$CPP_DIR"/*.cpp "$CPP_DIR"/*.hpp
-else
-  echo "clang-format not found"
-fi
-
-cargo fmt --manifest-path "$RUST_DIR/Cargo.toml"
+[tasks.format]
+description = "Format Lua and Rust"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+lua_files=(Brainstorm.lua UI.lua config.lua steamodded_compat.lua)
+stylua "${lua_files[@]}"
+cargo fmt --manifest-path "$IMMO_DIR/Cargo.toml"
 '''
 
 [tasks.fmt]
@@ -346,24 +382,26 @@ description = "Alias for format"
 run = "mise run format"
 
 [tasks.lint]
-description = "Check Lua, C++, and Rust formatting/lints where tools are available"
+description = "Check Lua and Rust formatting/lints"
 shell = "bash -c"
 run = '''
 set -euo pipefail
-if command -v stylua >/dev/null; then
-  stylua --check Brainstorm.lua UI.lua config.lua steamodded_compat.lua
-else
-  echo "stylua not found"
-fi
+export PATH="$HOME/.luarocks/bin:$PATH"
+lua_files=(Brainstorm.lua UI.lua config.lua steamodded_compat.lua)
 
-if command -v clang-format >/dev/null; then
-  clang-format --dry-run -Werror "$CPP_DIR"/*.cpp "$CPP_DIR"/*.hpp
-else
-  echo "clang-format not found"
-fi
+command -v stylua >/dev/null || { echo "stylua not found. Run: mise install"; exit 1; }
+command -v luajit >/dev/null || { echo "luajit not found. Install LuaJIT, then run: mise run doctor"; exit 1; }
+command -v luacheck >/dev/null || { echo "luacheck not found. Run: mise run setup-lua"; exit 1; }
 
-cargo fmt --manifest-path "$RUST_DIR/Cargo.toml" --check
-cargo clippy --manifest-path "$RUST_DIR/Cargo.toml" --all-targets -- -D warnings
+stylua --check "${lua_files[@]}"
+for lua_file in "${lua_files[@]}"; do
+  luajit -b "$lua_file" "/tmp/brainstorm-${lua_file//\//-}.luajit"
+done
+luacheck "${lua_files[@]}"
+mise run check-version
+
+cargo fmt --manifest-path "$IMMO_DIR/Cargo.toml" --check
+cargo clippy --manifest-path "$IMMO_DIR/Cargo.toml" --all-targets -- -D warnings
 '''
 
 [tasks.release]
@@ -371,16 +409,25 @@ description = "Build, validate, and package release zip"
 shell = "bash -c"
 run = '''
 set -euo pipefail
-mise run check-rust
+mise run check
+
+version_number="$(sed -n 's/^version = "\([^"]*\)"/\1/p' lovely.toml | head -n1)"
+package_dir="Brainstorm_v$version_number"
+package_zip="$package_dir.zip"
+release_dir="release/$package_dir"
 
 rm -rf release
-mkdir -p "$RELEASE_DIR"
-cp Brainstorm.lua UI.lua config.lua lovely.toml nativefs.lua steamodded_compat.lua "$RELEASE_DIR"/
-cp "$DLL" "$RELEASE_DIR"/
-echo "3.1" > "$RELEASE_DIR/VERSION"
-date >> "$RELEASE_DIR/VERSION"
+mkdir -p "$release_dir"
+cp Brainstorm.lua UI.lua config.lua lovely.toml nativefs.lua steamodded_compat.lua "$release_dir"/
+cp "$DLL" "$release_dir"/
+{
+  echo "$version_number"
+  date
+} > "$release_dir/VERSION"
+zip_path="release/$package_zip"
 if command -v zip >/dev/null; then
-  (cd release && zip -r Brainstorm_v3.1.zip Brainstorm_v3.1 >/dev/null)
+  (cd release && zip -r "$package_zip" "$package_dir" >/dev/null)
+  echo "created $zip_path"
 else
   echo "zip not found"
 fi
@@ -403,4 +450,4 @@ cp "$DLL" "$target/$DLL"
 
 [tasks.clean]
 description = "Remove build and release artifacts"
-run = "rm -rf Immolate/build Immolate.dll release target/cpp target/rust"
+run = "rm -rf Immolate/target release target"

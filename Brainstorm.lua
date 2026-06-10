@@ -10,8 +10,7 @@ local ffi = require("ffi")
 
 Brainstorm = {}
 
--- Mod version
-Brainstorm.VERSION = "Brainstorm v3.1"
+Brainstorm.VERSION = "Brainstorm"
 
 -- Reserved for Steammodded compatibility
 Brainstorm.SMODS = nil
@@ -121,6 +120,22 @@ local function as_string(value)
   return tostring(value)
 end
 
+local function load_version_info()
+  if not Brainstorm.PATH then
+    return
+  end
+
+  local lovely_content = nfs.read(Brainstorm.PATH .. "/lovely.toml")
+  if not lovely_content then
+    return
+  end
+
+  local version = lovely_content:match('version%s*=%s*"([^"]+)"')
+  if version then
+    Brainstorm.VERSION = "Brainstorm v" .. version
+  end
+end
+
 local function as_number(value, default)
   local num = tonumber(value)
   if num == nil then
@@ -173,6 +188,8 @@ local function init_log_path()
     pcall(nfs.write, Brainstorm.LOG_PATH, "")
   end
 end
+
+Brainstorm.init_log_path = init_log_path
 
 local function log_lua(message)
   -- Logging disabled.
@@ -284,7 +301,8 @@ function Brainstorm.load_config()
         or "Disabled"
 
       -- Map suit ratio percentage to decimal value (use static table)
-      Brainstorm.config.ar_prefs.suit_ratio_decimal = Brainstorm.RATIO_MAP[Brainstorm.config.ar_prefs.suit_ratio_percent]
+      local suit_ratio_percent = Brainstorm.config.ar_prefs.suit_ratio_percent
+      Brainstorm.config.ar_prefs.suit_ratio_decimal = Brainstorm.RATIO_MAP[suit_ratio_percent]
         or 0
     end
   end
@@ -307,6 +325,7 @@ function Brainstorm.init()
   if not Brainstorm.PATH then
     return false
   end
+  load_version_info()
   -- init_log_path()
   -- log_lua("init start")
   -- log_lua("mod path=" .. Brainstorm.PATH .. " log path=" .. Brainstorm.LOG_PATH)

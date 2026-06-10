@@ -10,6 +10,7 @@
 *.pdb
 *.ilk
 *.exp
+!Immolate/Immolate-OceanRamenandMathIsFun0.dll
 
 # Build directories
 build/
