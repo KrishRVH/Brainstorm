@@ -70,8 +70,6 @@ mod windows_harness {
         fn LoadLibraryW(path: *const u16) -> HModule;
         fn GetProcAddress(module: HModule, name: *const c_char) -> FarProc;
         fn FreeLibrary(module: HModule) -> i32;
-        fn GetStdHandle(n_std_handle: u32) -> HModule;
-        fn SetStdHandle(n_std_handle: u32, handle: HModule) -> i32;
         fn CreateFileW(
             file_name: *const u16,
             desired_access: u32,
@@ -93,7 +91,6 @@ mod windows_harness {
         fn fflush(stream: *mut c_void) -> c_int;
     }
 
-    const STD_OUTPUT_HANDLE: u32 = -11_i32 as u32;
     const GENERIC_WRITE: u32 = 0x4000_0000;
     const FILE_SHARE_READ: u32 = 0x0000_0001;
     const FILE_SHARE_WRITE: u32 = 0x0000_0002;
@@ -295,7 +292,6 @@ mod windows_harness {
     }
 
     struct StdoutSilencer {
-        previous_handle: HModule,
         previous_fd: c_int,
         nul_fd: c_int,
         active: bool,
@@ -308,11 +304,9 @@ mod windows_harness {
             }
             let mut nul_path: Vec<u16> = OsStr::new("NUL").encode_wide().collect();
             nul_path.push(0);
-            let previous_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
             let previous_fd = unsafe { _dup(STDOUT_FILENO) };
             if previous_fd < 0 {
                 return Self {
-                    previous_handle,
                     previous_fd,
                     nul_fd: -1,
                     active: false,
@@ -335,7 +329,6 @@ mod windows_harness {
                     _close(previous_fd);
                 }
                 return Self {
-                    previous_handle,
                     previous_fd: -1,
                     nul_fd: -1,
                     active: false,
@@ -349,17 +342,13 @@ mod windows_harness {
                     _close(previous_fd);
                 }
                 return Self {
-                    previous_handle,
                     previous_fd: -1,
                     nul_fd: -1,
                     active: false,
                 };
             }
 
-            let active = unsafe {
-                let redirected = _dup2(nul_fd, STDOUT_FILENO) == 0;
-                SetStdHandle(STD_OUTPUT_HANDLE, nul) != 0 && redirected
-            };
+            let active = unsafe { _dup2(nul_fd, STDOUT_FILENO) == 0 };
             if !active {
                 unsafe {
                     _dup2(previous_fd, STDOUT_FILENO);
@@ -367,7 +356,6 @@ mod windows_harness {
                     _close(nul_fd);
                 }
                 return Self {
-                    previous_handle,
                     previous_fd: -1,
                     nul_fd: -1,
                     active: false,
@@ -375,7 +363,6 @@ mod windows_harness {
             }
 
             Self {
-                previous_handle,
                 previous_fd,
                 nul_fd,
                 active,
@@ -390,7 +377,6 @@ mod windows_harness {
                     fflush(ptr::null_mut());
                     _dup2(self.previous_fd, STDOUT_FILENO);
                     _close(self.previous_fd);
-                    SetStdHandle(STD_OUTPUT_HANDLE, self.previous_handle);
                     _close(self.nul_fd);
                 }
                 self.previous_fd = -1;
