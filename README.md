@@ -1,200 +1,161 @@
-# Brainstorm v3.0 - GPU-Accelerated Seed Finder for Balatro
+# Brainstorm for Balatro
+<img width="1536" height="864" alt="Brainstorm 3" src="https://github.com/user-attachments/assets/68a97977-3c80-4259-9378-58540a7b749e" />
 
-A high-performance mod that bypasses Balatro's UI to rapidly test thousands of seeds, finding those that match your exact criteria. Features CUDA GPU acceleration for 10-100x faster searching.
+Brainstorm is a Balatro mod that rapidly searches for seeds matching
+voucher/pack/tag/Joker/Erratic Deck filters and integrates directly into the
+game loop through Lua plus a native Rust DLL. The current DLL includes a
+user-toggleable CUDA fast path for Red Deck tag/voucher/pack/Observatory
+searches and falls back to the Rust CPU engine for the rest.
 
-## Features
-
-- **GPU Acceleration**: Utilizes NVIDIA GPUs for blazing-fast seed searching
-- **Dual Tag Support**: Search for seeds with specific tag combinations
-- **Save States**: Quick save/load functionality (Z+1-5 to save, X+1-5 to load)
-- **Auto-Reroll**: Continuously searches for matching seeds (Ctrl+A to toggle)
-- **Advanced Filters**: Vouchers, packs, souls, observatory, and more
-- **Seamless Integration**: Works directly within Balatro's game loop
-
-## Requirements
-
-- **Balatro** (Steam version)
-- **Windows 64-bit**
-- **NVIDIA GPU** (optional, for GPU acceleration)
-  - RTX 2060 or newer recommended
-  - CUDA Compute Capability 6.0+
-  - Latest NVIDIA drivers
-
-## Installation
-
-1. Download the latest release from GitHub Releases
-2. Extract to `%AppData%/Roaming/Balatro/Mods/Brainstorm/`
-3. Ensure the mod structure looks like:
-   ```
-   Balatro/Mods/Brainstorm/
-   ├── Core/
-   │   ├── Brainstorm.lua
-   │   └── logger.lua
-   ├── UI/
-   │   └── ui.lua
-   ├── Immolate.dll
-   ├── config.lua
-   └── lovely.toml
-   ```
-4. Launch Balatro - the mod loads automatically
-
-## Usage
-
-### In-Game Controls
-
-| Key | Action |
-|-----|--------|
-| **Ctrl+T** | Open Brainstorm settings tab |
-| **Ctrl+R** | Manual reroll (single seed test) |
-| **Ctrl+A** | Toggle auto-reroll (continuous search) |
-| **Z + 1-5** | Save current state to slot |
-| **X + 1-5** | Load state from slot |
-
-### Settings
-
-Access settings via **Ctrl+T** or the Brainstorm tab in the options menu:
-
-#### Filter Options
-- **Tags**: Select up to 2 tags for ante 1 (order-agnostic)
-- **Starting Voucher**: Filter by specific voucher
-- **Shop Pack**: Filter by pack availability
-- **Souls Required**: Number of soul cards needed
-- **Observatory**: Telescope + Celestial pack combo
-- **Perkeo**: Investment tag + Soul card
-
-#### Performance Options
-- **Debug Mode**: Enable detailed logging
-- **GPU Acceleration**: Toggle CUDA acceleration (auto-detected)
-
-## Performance
-
-### Speed Benchmarks
-
-| Hardware | Seeds/Second | Notes |
-|----------|--------------|-------|
-| **RTX 4090** | 1M+ | < 1ms per million seeds |
-| **RTX 3080** | 500K+ | Excellent performance |
-| **RTX 2060** | 200K+ | Good performance |
-| **CPU Only** | 10-50K | Varies by processor |
-
-### GPU Acceleration
-
-The mod automatically detects and uses NVIDIA GPUs when available. GPU acceleration provides:
-- 10-100x faster seed searching
-- Near-instant results for single tag searches
-- Sub-second results for dual tag combinations
-- Efficient batch processing of millions of seeds
-
-## Advanced Features
-
-### Save States
-
-Save states capture the complete game state including:
-- Current seed and ante
-- All cards and jokers
-- Money and hands
-- Shop contents
-- All game flags
-
-### Dual Tag Searching
-
-Search for seeds with two specific tags in ante 1:
-- **Same Tag Twice**: Both blinds must have the tag (extremely rare ~0.1%)
-- **Different Tags**: Both must appear (order doesn't matter ~1-5%)
-
-### Filter Combinations
-
-Combine multiple filters for precise seed hunting:
-- Tags + Voucher + Pack
-- Observatory setup (Telescope + Celestial pack)
-- Perkeo setup (Investment tag + Soul in arcana pack)
-
-## Technical Details
-
-### Architecture
-
+## Setup (Required First)
+1. Install `smods-1.0.0-beta` (Steamodded) for Balatro.
+2. Install Lovely.
+3. Build the DLL (from source):
+```bash
+mise trust
+mise run setup
+mise run build
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Lua Mod   │────▶│  Native DLL  │────▶│ CUDA Kernel  │
-│ (Brainstorm)│ FFI │ (Immolate)   │     │ (PTX/Driver) │
-└─────────────┘     └──────────────┘     └──────────────┘
+4. Deploy the mod (from source):
+```bash
+TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm mise run deploy
 ```
-
-### Implementation
-- **Lua Layer**: Game integration, UI, state management
-- **C++ DLL**: High-performance seed filtering, RNG simulation
-- **CUDA Kernel**: Massively parallel GPU computation
-- **Driver API**: Runtime PTX compilation for compatibility
-
-### Build Requirements
-
-For development/building from source:
-- MinGW-w64 (cross-compilation from Linux/WSL2)
-- CUDA Toolkit 12.0+ (for GPU support)
-- GCC 13 (for CUDA compatibility)
-
-## Troubleshooting
-
-### GPU Not Detected
-- Ensure latest NVIDIA drivers are installed
-- Check that GPU meets minimum requirements (Compute 6.0+)
-- Verify `nvcuda.dll` is present in system
-
-### Crashes on Launch
-- Verify all files are in correct locations
-- Check `%AppData%/Roaming/Balatro/Mods/lovely/log` for errors
-- Ensure using 64-bit Windows
-
-### Slow Performance
-- Enable GPU acceleration in settings
-- Close other GPU-intensive applications
-- Reduce filter complexity for faster results
-
-### Save State Issues
-- Ensure write permissions in Mods folder
-- Don't load states from different Balatro versions
-- States are compressed - don't edit manually
-
-## Configuration
-
-Settings are stored in `config.lua` and persist between sessions:
-
-```lua
-{
-  debug_enabled = false,        -- Enable debug logging
-  use_cuda = true,              -- Use GPU acceleration
-  ar_filters = {
-    enabled = false,            -- Auto-reroll state
-    tag_name = "Standard Tag",  -- Primary tag filter
-    tag2_name = "Standard Tag", -- Secondary tag filter
-    -- ... other filters
-  }
-}
-```
-
-## Debug Mode
-
-Enable debug mode for troubleshooting:
-1. Set `debug_enabled = true` in settings
-2. Check `brainstorm.log` for detailed information
-3. Includes timing, rejection reasons, and GPU metrics
+If `/mnt/c` write permissions fail, run with `sudo` or adjust mount permissions.
+If you do not want to build from source, skip to "Installation (no build)" below.
 
 ## Credits
+This project is licensed under CC BY-NC-SA 4.0.
 
-- **Development**: Balatro modding community
-- **GPU Acceleration**: CUDA Driver API implementation
-- **RNG Simulation**: Reverse-engineered from Balatro v1.0.1
+- Brainstorm was created by OceanRamen. This rewrite by KRVH derives from
+  https://github.com/OceanRamen/Brainstorm, which is licensed under the Mozilla
+  Public License Version 2.0.
+- The Immolate native DLL source was created by MathIsFun0. This project uses
+  CC BY-NC-SA 4.0 to remain compatible with the original Immolate source:
+  https://github.com/SpectralPack/Immolate/tree/26f41efcc313f045bc8bdbf49e5851c56ac40b31.
+- KRVH completed the Immolate C++ rewrite, ported unfinished functionality, and
+  added the Joker search workflow.
 
-## License
+## Features
+- Auto-reroll with dual-tag support (order-agnostic or same-tag-twice).
+- First-shop filters: voucher, two pack slots (e.g., Mega Spectral), specific
+  Joker in shop slots or Buffoon packs, observatory (Telescope + Mega
+  Celestial), Perkeo (The Soul rolls Perkeo).
+- Erratic Deck filters for face-card count, no-face searches, and suit-ratio searches.
+- Joker list is alphabetized with a name filter for quick searching; Reset All
+  clears filters and preferences back to defaults.
+- Save/load state (Z/X + 1-5), reroll hotkeys (Ctrl+R, Ctrl+A), settings UI (Ctrl+T).
+- Settings include `AP: USE CUDA`, which controls whether supported filters try
+  the GPU fast path.
 
-MIT License - See LICENSE file for details
+## Requirements
+- Balatro (Steam, Windows 64-bit).
+- Lovely injector (required): https://github.com/ethangreen-dev/lovely-injector
+- WSL2 for building/deploying from this repo.
+- mise for development tasks: https://mise.jdx.dev/
+- Mise-managed tools:
+```bash
+mise install
+```
+- LuaJIT and LuaRocks for Lua syntax/lint checks. Install them with your OS
+  package manager, then run:
+```bash
+mise run setup-lua
+```
+- Rust 1.96+ with the Windows GNU target:
+```bash
+rustup target add x86_64-pc-windows-gnu
+```
+- MinGW-w64 and Wine are required for C++ oracle builds, DLL comparison, and
+  benchmarks.
+- CUDA Toolkit with `nvcc` and a compatible host compiler is required for the
+  GPU-enabled build. On Ubuntu/WSL, `nvidia-cuda-toolkit` plus `gcc-12` matches
+  the default `CUDAHOSTCXX=gcc-12`. The default CUDA target is `sm_89` for RTX
+  4090; override with `BRAINSTORM_CUDA_ARCH` if needed. Set
+  `BRAINSTORM_SKIP_CUDA_BUILD=1` only when intentionally building a CPU-only DLL.
+- Write access to `%AppData%\Roaming\Balatro\Mods`.
 
-## Support
+## Build & Deploy (from source)
+`mise.toml` is the development interface. Run `mise trust` once per checkout,
+then use `mise run <task>`. `mise run setup` installs mise-managed tools,
+installs local Lua lint tools through LuaRocks, and runs `mise run doctor` to
+check the remaining WSL/system dependencies.
 
-- Report issues on GitHub
-- Mod compatibility: Works with most other Balatro mods
-- Updates: Check releases for latest versions
+`mise run build` builds the current Rust native DLL and writes `Immolate.dll`.
+There is one Rust implementation now. `mise run build-cpp` still builds the C++
+oracle from `Immolate/CPP/` for parity checks, but the game uses the Rust DLL.
+The Rust build embeds PTX compiled from `Immolate/Rust/src/cuda/brainstorm_cuda.cu`;
+at runtime the DLL loads the CUDA Driver API dynamically (`nvcuda.dll` on
+Windows, `libcuda` under WSL/Linux). The Brainstorm settings tab controls
+whether the DLL tries CUDA. If CUDA is enabled but unavailable, or if a filter
+is not GPU-supported, search automatically uses the Rust CPU path.
 
----
+`mise run lint` runs Lua formatting, LuaJIT bytecode syntax checks, luacheck,
+C++ formatting checks, rustfmt, and clippy. `mise run check-rust` runs Rust
+formatting, clippy, unit tests, DLL export/import validation, C++ vs Rust
+parity, and a benchmark regression smoke. `mise run check` runs both.
 
-**Note**: This mod is designed for single-player experimentation and does not modify save files permanently. Use responsibly and enjoy finding your perfect seeds!
+Strict full-suite benchmark gate:
+
+```bash
+mise run bench-full
+```
+
+Actual Lua UI UX benchmark gate:
+
+```bash
+mise run bench-ux
+```
+
+See `Immolate/Rust/BENCH.md` for benchmark workflows.
+
+**Release packaging:** `mise run release` (runs `mise run check`, then
+creates `release/Brainstorm_v3.1.zip`).
+
+**Development release:** `.github/workflows/dev-release.yml` runs on pushes to
+`master` and can also be triggered manually. It rebuilds the release zip and
+updates the prerelease titled `dev release` at tag `dev-release`.
+
+## Documentation
+- `AGENTS.md`: contributor and agent-facing project rules.
+- `BalatroSource_Guide.md`: verified Balatro source mechanics relevant to
+  search parity and future mod work.
+- `Immolate/Rust/PLAN.md`: current Rust DLL architecture, FFI contract, and
+  maintenance invariants.
+- `Immolate/Rust/BENCH.md`: benchmark harness, gates, and fixture groups.
+
+## Installation (no build)
+Download the v3.1 release zip from
+https://github.com/KrishRVH/Brainstorm/releases/tag/3.1 and extract it into
+`%AppData%\Roaming\Balatro\Mods\Brainstorm\` (same payload as
+`mise run deploy`).
+The folder name must be `Brainstorm`.
+Reload the game to activate the mod.
+
+Copy the mod files into `%AppData%\Roaming\Balatro\Mods\Brainstorm\` (same
+payload as `mise run deploy`) if you are assembling the payload manually:
+```
+Brainstorm/
+├── Brainstorm.lua
+├── UI.lua
+├── Immolate.dll           # Native DLL
+├── config.lua
+├── lovely.toml
+├── nativefs.lua
+└── steamodded_compat.lua
+```
+You can copy these from a release zip (e.g. `release/Brainstorm_v3.1.zip`) or
+from the repo after someone provides `Immolate.dll`.
+
+## Usage
+- Open settings: Ctrl+T. Toggle auto-reroll: Ctrl+A. Manual reroll: Ctrl+R.
+- Save/load state: Z/X + 1-5.
+- Configure filters: dual tags, voucher, pack (two shop slots), Joker
+  (searchable list + location), souls, observatory, Perkeo.
+- Configure Erratic Deck filters when searching for opening hands by face-card
+  count, no faces, or suit concentration.
+- Use "Reset All" in the Brainstorm tab to restore filter and Erratic deck
+  settings to defaults.
+
+## Troubleshooting
+- Missing DLL or wrong build: rerun `mise run build` and
+  `TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm mise run deploy`.
