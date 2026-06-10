@@ -21,41 +21,12 @@ jobs:
     env:
       BUILD_SHA: ${{ github.sha }}
       RELEASE_TAG: latest
-      WINEDEBUG: -all
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            file \
-            liblua5.1-0-dev \
-            lua5.1 \
-            luajit \
-            luarocks \
-            mingw-w64 \
-            wine \
-            zip
-
-      - name: Set up mise
-        uses: jdx/mise-action@v2
-
-      - name: Trust mise config
-        run: mise trust
-
-      - name: Install mise tools
-        run: mise install
-
-      - name: Set up Rust target
-        run: rustup target add x86_64-pc-windows-gnu
-
-      - name: Install Lua lint tools
-        run: mise run setup-lua
 
       - name: Read release version
         run: |
@@ -68,8 +39,25 @@ jobs:
           echo "RELEASE_TITLE=Brainstorm Supercharged v$version" >> "$GITHUB_ENV"
           echo "PACKAGE_ZIP=Brainstorm_v$version.zip" >> "$GITHUB_ENV"
 
-      - name: Build release zip
-        run: mise run release
+      - name: Package release zip
+        run: |
+          package_dir="Brainstorm_v${RELEASE_VERSION}"
+          release_dir="release/${package_dir}"
+
+          test -f Immolate.dll || {
+            echo "Immolate.dll is missing from the checkout"
+            exit 1
+          }
+
+          mkdir -p "${release_dir}"
+          cp Brainstorm.lua UI.lua config.lua lovely.toml nativefs.lua steamodded_compat.lua "${release_dir}/"
+          cp Immolate.dll "${release_dir}/"
+          {
+            echo "${RELEASE_VERSION}"
+            date
+          } > "${release_dir}/VERSION"
+
+          (cd release && zip -r "${PACKAGE_ZIP}" "${package_dir}" >/dev/null)
 
       - name: Stage release artifacts
         run: |
