@@ -5,8 +5,8 @@ return {
     ["suit_ratio_decimal"] = 0,
     ["suit_ratio_id"] = 1,
     ["suit_ratio_percent"] = "Disabled",
-    ["spf_int"] = 1000,
-    ["spf_id"] = 4,
+    ["spf_int"] = 100000,
+    ["spf_id"] = 12,
   },
   ["ar_filters"] = {
     ["inst_perkeo"] = false,

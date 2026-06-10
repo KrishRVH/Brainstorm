@@ -1,6 +1,6 @@
 # Immolate Rust Current State
 
-Last updated: 2026-06-09
+Last updated: 2026-06-10
 
 This document records the current Rust DLL architecture and maintenance rules.
 The Rust rewrite is complete. Brainstorm now has one Rust implementation, built
@@ -11,16 +11,16 @@ For benchmark operation details, use `Immolate/Rust/BENCH.md`.
 
 ## Current Status
 
-- `make build` and `make build-rust` build the Rust DLL and copy it to the repo
+- `mise run build` and `mise run build-rust` build the Rust DLL and copy it to the repo
   root as `Immolate.dll`.
-- `make build-cpp` builds the C++ oracle to `target/cpp/Immolate.dll`.
-- There are no older Rust build features, Makefile targets, or source modules.
+- `mise run build-cpp` builds the C++ oracle to `target/cpp/Immolate.dll`.
+- There are no older Rust build features, mise tasks, or source modules.
 - Future Rust experiments are compared as external DLL artifacts through
   `RUST_CANDIDATE_DLL=/path/to/Immolate.dll`; they are not built from in-repo
   feature flags.
-- `make compare` validates C++ vs current Rust through the Windows ABI under
+- `mise run compare` validates C++ vs current Rust through the Windows ABI under
   Wine.
-- `make bench-compare` benchmarks C++ vs current Rust, and optionally a future
+- `mise run bench-compare` benchmarks C++ vs current Rust, and optionally a future
   candidate DLL, through the same ABI harness.
 - Benchmark comparison fails on result mismatch. A faster wrong seed is a
   failure.
@@ -143,7 +143,7 @@ Important invariants:
 Routine validation:
 
 ```bash
-make check-rust
+mise run check-rust
 ```
 
 That runs Rust formatting, clippy, unit tests, DLL export/import validation,
@@ -152,70 +152,37 @@ C++ vs Rust parity, and a small benchmark smoke test.
 Strict full-suite performance gate:
 
 ```bash
-make bench-compare \
-  BENCH_CASE=all \
-  BENCH_BUDGET=100000 \
-  BENCH_REPEAT=5 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=1 \
-  BENCH_FORMAT=tsv \
-  BENCH_COLOR=never \
-  BENCH_MIN_RATIO=1.0
+mise run bench-full
 ```
 
 Actual Lua UI UX gate:
 
 ```bash
-make bench-compare \
-  BENCH_CASE=ux \
-  BENCH_BUDGET=100000 \
-  BENCH_REPEAT=5 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=0 \
-  BENCH_FORMAT=tsv \
-  BENCH_COLOR=never \
-  BENCH_MIN_RATIO=1.0
+mise run bench-ux
 ```
 
 Pretty full-suite dashboard:
 
 ```bash
-make bench-compare \
-  BENCH_CASE=all \
-  BENCH_BUDGET=1000000 \
-  BENCH_REPEAT=7 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=1 \
-  BENCH_FORMAT=pretty \
-  BENCH_COLOR=always \
-  BENCH_MIN_RATIO=1.0
+mise run bench-pretty
 ```
 
 ## Future Candidate Workflow
 
 Keep the in-repo Rust implementation singular. To test another Rust candidate:
 
-1. Build the current repo with `make build-rust`.
+1. Build the current repo with `mise run build-rust`.
 2. Build or copy the candidate DLL to a separate path.
 3. Validate behavior:
 
 ```bash
-make compare RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll
+RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll mise run compare
 ```
 
 4. Benchmark the candidate:
 
 ```bash
-make bench-compare \
-  RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll \
-  BENCH_CASE=all \
-  BENCH_BUDGET=1000000 \
-  BENCH_REPEAT=7 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=1 \
-  BENCH_FORMAT=pretty \
-  BENCH_COLOR=always \
-  BENCH_MIN_RATIO=1.0
+RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll mise run bench-pretty
 ```
 
 Run an A/A benchmark first by pointing `RUST_CANDIDATE_DLL` at
@@ -224,18 +191,17 @@ small wins.
 
 ## Latest Local Performance State
 
-The latest documented local runs on 2026-06-09 passed:
+The latest documented local validation passed:
 
-- `make check-rust`
-- `make compare`
-- strict full-catalog benchmark with `BENCH_MIN_RATIO=1.0`
-- heavier 1,000,000-budget full-catalog sanity benchmark with
-  `BENCH_MIN_RATIO=1.0`
-- actual Lua UX benchmark with `BENCH_THREADS=0` and `BENCH_MIN_RATIO=1.0`
+- `mise run check-rust`
+- `mise run bench-full`
+- `mise run bench-ux`
 
-The weakest observed ratio in the heavier full-catalog run was `1.089x` in
-favor of Rust. The weakest observed ratio in the actual UX run was `1.607x` in
-favor of Rust.
+Those gates enforce C++/Rust result parity and fail if Rust drops below the
+configured C++ throughput threshold. In that local pass, the weakest observed
+full-suite ratio was `1.124x` on `ux-tag-voucher-pack`; the weakest observed UX
+ratio was `1.611x` on `ux-voucher-pack`. Treat these as environment-specific
+measurements; the gate commands are the durable release criteria.
 
 ## Release Notes For Maintainers
 

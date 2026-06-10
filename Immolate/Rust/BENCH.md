@@ -5,16 +5,16 @@ legacy C++ DLL oracle.
 
 ## Benchmark Philosophy
 
-Correctness and speed are separate questions. Use `make compare` first to prove
+Correctness and speed are separate questions. Use `mise run compare` first to prove
 that the C++ oracle and Rust DLL return the same answers through the Windows ABI.
-Use `make bench-compare` only after parity passes.
+Use `mise run bench-compare` only after parity passes.
 
 For performance work, default to this loop:
 
-1. Prove C++ vs current Rust parity with `make compare`.
+1. Prove C++ vs current Rust parity with `mise run compare`.
 2. Establish the noise floor with an A/A run where `rust-candidate` points at
    the same DLL as `rust-base`.
-3. Validate the real candidate with `make compare RUST_CANDIDATE_DLL=...`.
+3. Validate the real candidate with `RUST_CANDIDATE_DLL=... mise run compare`.
 4. Benchmark C++ vs current Rust vs the candidate using the same case set,
    budget, repeat count, warmup count, and thread count.
 5. Treat small wins skeptically unless they clear the A/A drift and the reported
@@ -32,13 +32,13 @@ The harness fails on result mismatches. A fast wrong seed is a benchmark failure
 Build the current Rust DLL used by Brainstorm:
 
 ```bash
-make build-rust
+mise run build-rust
 ```
 
 Build and compare C++ vs current Rust:
 
 ```bash
-make compare
+mise run compare
 ```
 
 Run the complete C++ vs current Rust dashboard. This is the full-suite pretty
@@ -46,30 +46,14 @@ command and fails if Rust is not faster than C++ on any case or if any result
 differs:
 
 ```bash
-make bench-compare \
-  BENCH_CASE=all \
-  BENCH_BUDGET=1000000 \
-  BENCH_REPEAT=7 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=1 \
-  BENCH_FORMAT=pretty \
-  BENCH_COLOR=always \
-  BENCH_MIN_RATIO=1.0
+mise run bench-pretty
 ```
 
 Run the full benchmark catalog as a strict per-case gate. This fails if Rust is
 not faster than C++ on any case or if any result differs:
 
 ```bash
-make bench-compare \
-  BENCH_CASE=all \
-  BENCH_BUDGET=100000 \
-  BENCH_REPEAT=5 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=1 \
-  BENCH_FORMAT=tsv \
-  BENCH_COLOR=never \
-  BENCH_MIN_RATIO=1.0
+mise run bench-full
 ```
 
 Run the actual Lua UI UX gate. This uses the reset/default 100,000 SPF budget,
@@ -77,53 +61,46 @@ lets the DLL choose the thread count exactly as the UI does, requires Rust to
 beat C++ on every UX case, and fails if any result differs:
 
 ```bash
-make bench-compare \
-  BENCH_CASE=ux \
-  BENCH_BUDGET=100000 \
-  BENCH_REPEAT=5 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=0 \
-  BENCH_FORMAT=tsv \
-  BENCH_COLOR=never \
-  BENCH_MIN_RATIO=1.0
+mise run bench-ux
 ```
 
 Run the Rust DLL benchmark only:
 
 ```bash
-make bench BENCH_BUDGET=100000 BENCH_REPEAT=3 BENCH_CASE=all
+BENCH_BUDGET=100000 BENCH_REPEAT=3 BENCH_CASE=all mise run bench
 ```
 
 Run one profiling group:
 
 ```bash
-make bench-compare BENCH_CASE=jokers BENCH_BUDGET=100000 BENCH_REPEAT=5
+BENCH_CASE=jokers BENCH_BUDGET=100000 BENCH_REPEAT=5 mise run bench-compare
 ```
 
 Run script-friendly TSV output:
 
 ```bash
-make bench-compare BENCH_FORMAT=tsv BENCH_COLOR=never \
-  BENCH_BUDGET=100000 BENCH_REPEAT=3 BENCH_CASE=all
+BENCH_FORMAT=tsv BENCH_COLOR=never \
+  BENCH_BUDGET=100000 BENCH_REPEAT=3 BENCH_CASE=all \
+  mise run bench-compare
 ```
 
 Run a thorough TSV archive for later parsing:
 
 ```bash
-make bench-compare \
-  BENCH_CASE=all \
+BENCH_CASE=all \
   BENCH_BUDGET=1000000 \
   BENCH_REPEAT=7 \
   BENCH_WARMUP=2 \
   BENCH_THREADS=1 \
   BENCH_FORMAT=tsv \
-  BENCH_COLOR=never > bench.tsv
+  BENCH_COLOR=never \
+  mise run bench-compare > bench.tsv
 ```
 
 Run the full Rust validation gate, including a small benchmark smoke test:
 
 ```bash
-make check-rust
+mise run check-rust
 ```
 
 Use `bench-compare` for performance claims. It builds the C++ oracle and the
@@ -133,39 +110,30 @@ drops below the configured C++ throughput threshold.
 
 ## Candidate DLL Workflow
 
-The repo now has one Rust implementation. `make build-rust` writes the default
+The repo now has one Rust implementation. `mise run build-rust` writes the default
 Brainstorm DLL to both `target/rust/Immolate.dll` and `Immolate.dll`.
 
 To compare a future optimization candidate, build or copy that candidate DLL to
 a separate path and pass it to the existing harness:
 
 ```bash
-make compare RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll
+RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll mise run compare
 
-make bench-compare \
-  RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll \
-  BENCH_CASE=all \
-  BENCH_BUDGET=1000000 \
-  BENCH_REPEAT=7 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=1 \
-  BENCH_FORMAT=pretty \
-  BENCH_COLOR=always \
-  BENCH_MIN_RATIO=1.0
+RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll mise run bench-pretty
 ```
 
 `RUST_BASE_DLL` is still available when you need to benchmark against a saved
 artifact instead of the freshly built current Rust DLL:
 
 ```bash
-make bench-compare \
-  RUST_BASE_DLL=/path/to/base/Immolate.dll \
+RUST_BASE_DLL=/path/to/base/Immolate.dll \
   RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll \
   BENCH_CASE=all \
   BENCH_BUDGET=1000000 \
   BENCH_REPEAT=7 \
   BENCH_WARMUP=2 \
-  BENCH_THREADS=1
+  BENCH_THREADS=1 \
+  mise run bench-compare
 ```
 
 For a serious candidate comparison, run the same command twice: once as A/A
@@ -180,52 +148,27 @@ candidate/base non-hit full-budget geometric mean reaches that target.
 
 ## Latest Validated Local Run
 
-The latest strict full-catalog gate on June 9, 2026 used:
+The latest local documentation-sync pass validated the current Rust DLL with:
 
 ```bash
-make bench-compare \
-  BENCH_CASE=all \
-  BENCH_BUDGET=100000 \
-  BENCH_REPEAT=5 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=1 \
-  BENCH_FORMAT=tsv \
-  BENCH_COLOR=never \
-  BENCH_MIN_RATIO=1.0
+mise run check-rust
+mise run bench-full
+mise run bench-ux
 ```
 
-It passed with result parity enforced across C++ and Rust. Rust beat C++ on
-every benchmark fixture in that run. The narrowest observed full-catalog
-single-thread ratios were the full-budget composite UX cases, all still above
-`1.10x`.
+Those gates passed with result parity enforced across C++ and Rust. Rust beat
+C++ on every full-suite fixture and every UI-reachable UX fixture in those runs.
+The narrowest observed full-suite ratio was `1.124x` on
+`ux-tag-voucher-pack`; the narrowest observed UX ratio was `1.611x` on
+`ux-voucher-pack`.
 
-A heavier single-thread catalog sanity run also passed at
-`BENCH_BUDGET=1000000 BENCH_REPEAT=3 BENCH_WARMUP=1 BENCH_MIN_RATIO=1.0`.
-The weakest observed ratio in that run was `1.089x` on
-`ux-tag-voucher-pack`.
+Treat these ratios as local measurements, not permanent constants. The named
+gates are the source of truth: they fail if any compared result differs or if
+`rust-base` drops below the configured C++ throughput threshold.
 
-The latest expanded UX gate on June 9, 2026 used:
-
-```bash
-make bench-compare \
-  BENCH_CASE=ux \
-  BENCH_BUDGET=100000 \
-  BENCH_REPEAT=5 \
-  BENCH_WARMUP=2 \
-  BENCH_THREADS=0 \
-  BENCH_FORMAT=tsv \
-  BENCH_COLOR=never \
-  BENCH_MIN_RATIO=1.0
-```
-
-It passed with result parity enforced across C++ and Rust. Rust beat C++ on
-every UI-reachable UX fixture in that run. The weakest observed Rust/C++ ratio
-was `1.607x` on `ux-voucher-pack`; the full-budget miss cases that had been
-behind C++ were all above `5.45x`.
-
-`make check-rust` also passed after the benchmark overhaul. Its embedded
-benchmark is only a smoke test (`BENCH_BUDGET=1000 BENCH_REPEAT=1` by default
-in the Makefile target), not an optimization-quality measurement.
+`mise run check-rust` includes only a benchmark smoke test
+(`BENCH_BUDGET=1000 BENCH_REPEAT=1` by default in the mise task), not an
+optimization-quality measurement.
 
 ## Requirements
 
@@ -242,7 +185,7 @@ successfully.
 
 ## Benchmark Knobs
 
-The Makefile exposes these variables:
+The mise tasks read these environment variables:
 
 - `BENCH_CASE=all|baseline|tags|vouchers|packs|jokers|souls|deck|ux|CASE_NAME`
 - `BENCH_BUDGET=1000000`
@@ -369,7 +312,7 @@ Wine and the C ABI, so it is best for inner-loop profiling only.
 
 Before changing hot-path code:
 
-1. Run `make compare` and make sure C++ and `rust-base` are in parity.
+1. Run `mise run compare` and make sure C++ and `rust-base` are in parity.
 2. Run an A/A benchmark with `RUST_CANDIDATE_DLL=target/rust/Immolate.dll` and
    save the candidate/base ratio plus CV values.
 3. Run the complete dashboard with `BENCH_CASE=all`,
@@ -381,11 +324,11 @@ Before changing hot-path code:
    "Group Speedups", and any "High Variance" warnings.
 6. Make the smallest performance-oriented change that preserves parity.
 7. Build the experiment as a candidate DLL and run
-   `make compare RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll`.
+   `RUST_CANDIDATE_DLL=/path/to/candidate/Immolate.dll mise run compare`.
 8. Rerun the exact same `bench-compare` command with `RUST_CANDIDATE_DLL=...`.
 9. Keep the change only if the relevant fixture improves beyond the A/A noise or
    the tradeoff is explicitly justified.
-10. Finish with `make check-rust` before release or deployment work.
+10. Finish with `mise run check-rust` before release or deployment work.
 
 When adding a benchmark fixture, update `Immolate/Rust/src/bench_cases.rs`. Both
 `Immolate/Rust/src/bin/immolate_dll_harness.rs` and

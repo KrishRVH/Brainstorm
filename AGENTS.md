@@ -9,26 +9,28 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 ## Project Structure & Module Organization
 - Lua entry/UI: `Brainstorm.lua`, `UI.lua`; config/compat in `config.lua`, `lovely.toml`, `nativefs.lua`, `steamodded_compat.lua`.
 - Native sources: `Immolate/Rust/` is the only Rust DLL implementation. `Immolate/*.cpp` and `Immolate/*.hpp` remain the C++ oracle (CPU-only; entry is `Immolate/brainstorm.cpp`).
-- Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use the repo `Makefile`; the C++ oracle artifact is kept under `target/cpp/`, and the current Rust artifact is kept under `target/rust/`.
+- Artifacts: DLL is `Immolate.dll` (default). Build/lint/format/deploy all use `mise.toml`. The C++ oracle artifact is kept under `target/cpp/`, and the current Rust artifact is kept under `target/rust/`.
 - Rust candidate iteration is artifact-based: keep the in-repo Rust implementation singular, and compare future experimental DLLs with `RUST_CANDIDATE_DLL=/path/to/Immolate.dll`.
 - `BalatroSource/` is the literal game source; never commit it to git and always use it as the source of truth for understanding game behavior.
 - `BalatroSource_Guide.md` summarizes seed/search-relevant mechanics verified from `BalatroSource/`.
 - Logging is currently disabled in Lua/C++ and the Rust `immolate_set_log_path` export is a no-op; keep it off unless explicitly re-enabled.
 
 ## Build and Development Commands
-- Build: `make build` outputs the Rust `Immolate.dll`.
-- C++ oracle: `make build-cpp`.
-- Rust validation: `make check-rust`.
-- C++ vs Rust parity: `make compare`.
-- Benchmarks: `make bench-compare`.
-- Strict full-suite benchmark gate: `make bench-compare BENCH_CASE=all BENCH_BUDGET=100000 BENCH_REPEAT=5 BENCH_WARMUP=2 BENCH_THREADS=1 BENCH_FORMAT=tsv BENCH_COLOR=never BENCH_MIN_RATIO=1.0`.
-- Actual Lua UI UX benchmark gate: `make bench-compare BENCH_CASE=ux BENCH_BUDGET=100000 BENCH_REPEAT=5 BENCH_WARMUP=2 BENCH_THREADS=0 BENCH_FORMAT=tsv BENCH_COLOR=never BENCH_MIN_RATIO=1.0`.
-- Deploy: `make deploy TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm`.
-- Release: `make release` (builds the DLL and zips `release/Brainstorm_v3.1.zip`).
-- Formatting: `make format` (runs stylua/clang-format when available).
-- Lint: `make lint` (stylua/clang-format checks when available).
-- Clean: `make clean`.
-- No standalone scripts or test runners; use the Makefile targets and validate in-game.
+- First run in a checkout: `mise trust`.
+- Build: `mise run build` outputs the Rust `Immolate.dll`.
+- C++ oracle: `mise run build-cpp`.
+- Rust validation: `mise run check-rust`.
+- C++ vs Rust parity: `mise run compare`.
+- Benchmarks: `mise run bench-compare`.
+- Strict full-suite benchmark gate: `mise run bench-full`.
+- Actual Lua UI UX benchmark gate: `mise run bench-ux`.
+- Pretty full-suite dashboard: `mise run bench-pretty`.
+- Deploy: `TARGET=/mnt/c/Users/Krish/AppData/Roaming/Balatro/Mods/Brainstorm mise run deploy`.
+- Release: `mise run release` (builds the DLL and zips `release/Brainstorm_v3.1.zip`).
+- Formatting: `mise run format` (runs stylua/clang-format/rustfmt when available).
+- Lint: `mise run lint` (stylua/clang-format/rustfmt/clippy checks).
+- Clean: `mise run clean`.
+- No standalone scripts or test runners; use the mise tasks and validate in-game.
 
 ## Architecture & FFI Safety
 - DLL entry: `immolate.brainstorm_search(seed_start, voucher_key, pack_key, tag1_key, tag2_key, joker_name, joker_location, souls, observatory, perkeo, deck_key, erratic, no_faces, min_face_cards, suit_ratio, num_seeds, threads)`; pass Balatro keys (e.g. `v_telescope`, `tag_charm`, `p_spectral_mega_1`), always `free_result()` on non-empty returns, and wrap FFI in `pcall`.

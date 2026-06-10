@@ -31,8 +31,8 @@ Brainstorm.config = {
     pack_id = 1,
     voucher_name = "",
     voucher_id = 1,
-    tag_name = "tag_charm",
-    tag_id = 2,
+    tag_name = "",
+    tag_id = 1,
     tag2_name = "",
     tag2_id = 1,
     joker_name = "",
@@ -40,13 +40,13 @@ Brainstorm.config = {
     joker_id = 1,
     joker_location = "any",
     joker_location_id = 1,
-    soul_skip = 1,
+    soul_skip = 0,
     inst_observatory = false,
     inst_perkeo = false,
   },
   ar_prefs = {
-    spf_id = 3,
-    spf_int = 1000,
+    spf_id = 12,
+    spf_int = 100000,
     face_count = 0,
     suit_ratio_id = 1,
     suit_ratio_percent = "Disabled",
@@ -215,19 +215,30 @@ local function report_auto_reroll_error(message)
   Brainstorm.save_state_alert(message)
 end
 
--- Find the Brainstorm mod directory
--- Searches for a directory containing "brainstorm" (case-insensitive)
+-- Find the Brainstorm mod directory.
 local function find_brainstorm_directory(directory)
+  if type(directory) ~= "string" or directory == "" then
+    return nil
+  end
+  local exact_path = directory .. "/Brainstorm"
+  if nfs.getInfo(exact_path, "directory") then
+    return exact_path
+  end
+
+  local fallback_path = nil
   for _, item in ipairs(nfs.getDirectoryItems(directory)) do
-    local itemPath = directory .. "/" .. item
-    if
-      nfs.getInfo(itemPath, "directory")
-      and string_lower(item):find("brainstorm")
-    then
-      return itemPath
+    local item_path = directory .. "/" .. item
+    if nfs.getInfo(item_path, "directory") then
+      local item_name = string_lower(item)
+      if item_name == "brainstorm" then
+        return item_path
+      end
+      if not fallback_path and item_name:find("brainstorm", 1, true) then
+        fallback_path = item_path
+      end
     end
   end
-  return nil
+  return fallback_path
 end
 
 local function file_exists(file_path)
