@@ -167,35 +167,31 @@ local function rebuild_joker_options()
   end)
 end
 -- Seeds per frame (SPF) options for auto-reroll batch size
--- Higher values test more seeds per pass but may cause lag
+-- Higher values test more seeds per pass and can stall a frame on heavy filters.
 local spf_list = {
-  ["250"] = 250, -- Conservative, no lag
-  ["500"] = 500, -- Default balanced
-  ["750"] = 750,
-  ["1000"] = 1000, -- Fast
-  ["2000"] = 2000, -- Very fast
-  ["3000"] = 3000, -- May cause lag
-  ["4000"] = 4000, -- Likely causes lag
-  ["5000"] = 5000, -- Maximum speed
-  ["10000"] = 10000, -- Aggressive
-  ["25000"] = 25000, -- Extreme
-  ["50000"] = 50000, -- Use with care
-  ["100000"] = 100000, -- Very likely to lag
+  ["1000"] = 1000,
+  ["2500"] = 2500,
+  ["5000"] = 5000,
+  ["10000"] = 10000,
+  ["25000"] = 25000,
+  ["50000"] = 50000,
+  ["100000"] = 100000,
+  ["250000"] = 250000,
+  ["500000"] = 500000,
+  ["1000000"] = 1000000,
 }
 
 local spf_keys = {
-  "250",
-  "500",
-  "750",
   "1000",
-  "2000",
-  "3000",
-  "4000",
+  "2500",
   "5000",
   "10000",
   "25000",
   "50000",
   "100000",
+  "250000",
+  "500000",
+  "1000000",
 }
 
 -- Suit ratio options for Erratic deck filtering
@@ -427,7 +423,7 @@ G.FUNCS.change_soul_count = function(x)
   write_config()
 end
 
--- Seeds per second (reroll speed) callback
+-- Seeds per frame callback
 G.FUNCS.change_spf = function(x)
   config.ar_prefs.spf_id = x.to_key
   config.ar_prefs.spf_int = spf_list[x.to_val]

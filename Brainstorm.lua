@@ -45,7 +45,7 @@ Brainstorm.config = {
     inst_perkeo = false,
   },
   ar_prefs = {
-    spf_id = 12,
+    spf_id = 7,
     spf_int = 100000,
     face_count = 0,
     suit_ratio_id = 1,

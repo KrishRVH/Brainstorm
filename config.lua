@@ -6,7 +6,7 @@ return {
     ["suit_ratio_id"] = 1,
     ["suit_ratio_percent"] = "Disabled",
     ["spf_int"] = 100000,
-    ["spf_id"] = 12,
+    ["spf_id"] = 7,
   },
   ["ar_filters"] = {
     ["inst_perkeo"] = false,

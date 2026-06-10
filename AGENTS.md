@@ -38,7 +38,7 @@ Quick reference for contributing to Brainstorm (Balatro mod with a native DLL).
 - Pack filter simulates both shop pack slots; voucher check is ante-1 voucher; observatory reuses the same pack/voucher rolls, and Perkeo requires The Soul to roll Perkeo (legendary pool).
 - Joker search checks the first shop: location `shop` scans shop slots, `pack` scans Buffoon packs, `any` checks both (pack search respects the selected pack filter).
 - Soul checks only apply to Arcana/Spectral packs in the current shop slots.
-- Auto-reroll UI shows live scanned seed counts; SPF options go up to 100,000 seeds per pass.
+- Auto-reroll UI shows live scanned seed counts; SPF options go from 1,000 to 1,000,000 seeds per pass.
 - Rust search must preserve earliest matching seed semantics for both single-thread and parallel searches. Benchmark result mismatches fail the harness, even when the timing is faster.
 
 ## Coding Style & Naming Conventions
